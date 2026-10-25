@@ -1,0 +1,9 @@
+# Ignore local tunnel binaries & TLS keys (not needed in cloud)
+data/cloudflared
+data/cloudflared.tgz
+data/cert.pem
+data/key.pem
+data/public_url.txt
+__pycache__/
+*.pyc
+.DS_Store
