@@ -170,20 +170,59 @@ DEFAULT_ALBUMS = [
 ]
 
 
+ALBUMS_LOCK = threading.Lock()
+_ALBUMS_MEMORY_CACHE = None
+
+
+def normalize_exif_taken_time(raw_exif_dt: str, fallback_iso: str) -> str:
+    """
+    Converts EXIF date string like '2026:02:16 14:23:05' into ISO 8601 '2026-02-16T14:23:05'.
+    Falls back to fallback_iso if raw_exif_dt is empty.
+    """
+    s = (raw_exif_dt or "").strip()
+    if not s:
+        return fallback_iso or time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Match YYYY:MM:DD HH:MM:SS or YYYY-MM-DD HH:MM:SS
+    m = re.match(r"^(\d{4})[:\-](\d{2})[:\-](\d{2})[T\s](\d{2}:\d{2}:\d{2})(.*)$", s)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}T{m.group(4)}{m.group(5).strip()}"
+    return s
+
+
 def load_albums():
-    if not ALBUMS_FILE.exists():
-        save_albums(DEFAULT_ALBUMS)
+    global _ALBUMS_MEMORY_CACHE
+    with ALBUMS_LOCK:
+        if not ALBUMS_FILE.exists():
+            if _ALBUMS_MEMORY_CACHE is not None:
+                return _ALBUMS_MEMORY_CACHE
+            _ALBUMS_MEMORY_CACHE = DEFAULT_ALBUMS
+            _write_albums_unlocked(DEFAULT_ALBUMS)
+            return _ALBUMS_MEMORY_CACHE
+        try:
+            with open(ALBUMS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and len(data) > 0:
+                    _ALBUMS_MEMORY_CACHE = data
+                    return data
+        except Exception:
+            pass
+        if _ALBUMS_MEMORY_CACHE is not None:
+            return _ALBUMS_MEMORY_CACHE
         return DEFAULT_ALBUMS
-    try:
-        with open(ALBUMS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return DEFAULT_ALBUMS
+
+
+def _write_albums_unlocked(albums):
+    tmp_file = ALBUMS_FILE.with_suffix(".json.tmp")
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(albums, f, indent=2)
+    os.replace(str(tmp_file), str(ALBUMS_FILE))
 
 
 def save_albums(albums):
-    with open(ALBUMS_FILE, "w", encoding="utf-8") as f:
-        json.dump(albums, f, indent=2)
+    global _ALBUMS_MEMORY_CACHE
+    with ALBUMS_LOCK:
+        _ALBUMS_MEMORY_CACHE = albums
+        _write_albums_unlocked(albums)
 
 
 def ingest_tether_inbox_files(albums):
@@ -271,14 +310,14 @@ def fetch_drive_files_via_api(folder_id: str, api_key: str, max_photos: int = 30
             subfolders = []
 
     root_cat = "Main Gallery" if subfolders and category_name == "Live Sync" else category_name
-    query = f"'{folder_id}' in parents and mimeType contains 'image/' and trashed = false"
+    query = f"'{folder_id}' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and trashed = false"
     page_token = None
 
     while len(photos) < max_photos:
         q_params = {
             "q": query,
             "key": api_key,
-            "fields": "nextPageToken,files(id,name,mimeType,createdTime,thumbnailLink,webContentLink,imageMediaMetadata)",
+            "fields": "nextPageToken,files(id,name,mimeType,createdTime,thumbnailLink,webContentLink,imageMediaMetadata,videoMediaMetadata)",
             "orderBy": "name",
             "pageSize": min(1000, max_photos - len(photos)),
         }
@@ -294,21 +333,30 @@ def fetch_drive_files_via_api(folder_id: str, api_key: str, max_photos: int = 30
         files = data.get("files", [])
         for f in files:
             fid = f["id"]
-            meta = f.get("imageMediaMetadata", {})
+            mime = f.get("mimeType", "")
+            is_vid = "video" in mime or f.get("name", "").lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"))
+            meta = f.get("videoMediaMetadata" if is_vid else "imageMediaMetadata") or {}
             camera_str = meta.get("cameraMake", "")
             if meta.get("cameraModel"):
                 camera_str = f"{camera_str} {meta.get('cameraModel')}".strip()
             if not camera_str:
-                camera_str = "Google Drive Live Sync"
+                camera_str = "Google Drive Video" if is_vid else "Google Drive Live Sync"
+
+            upload_iso = f.get("createdTime", time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+            taken_iso = normalize_exif_taken_time(meta.get("time") or meta.get("date") or "", upload_iso)
 
             photos.append(
                 {
                     "id": f"gdrive-{fid}",
                     "driveFileId": fid,
-                    "name": f.get("name", f"IMG_{len(photos)+1}.jpg"),
-                    "url": f"/api/drive/image/{fid}?sz=w1600",
+                    "name": f.get("name", f"MEDIA_{len(photos)+1}"),
+                    "mediaType": "video" if is_vid else "photo",
+                    "url": f"/api/drive/video/{fid}" if is_vid else f"/api/drive/image/{fid}?sz=w1600",
+                    "videoUrl": f"/api/drive/video/{fid}" if is_vid else "",
                     "thumbUrl": f"/api/drive/image/{fid}?sz=w600",
-                    "createdTime": f.get("createdTime", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+                    "createdTime": taken_iso,
+                    "takenTime": taken_iso,
+                    "uploadedTime": upload_iso,
                     "camera": camera_str,
                     "category": root_cat,
                     "personCluster": "",
@@ -414,11 +462,11 @@ def fetch_drive_files_public_scrape(folder_id: str, max_photos: int = 3000, cate
                 page_token = None
                 while len(paginated_photos) < max_photos:
                     q_params = {
-                        "q": f"'{folder_id}' in parents and mimeType contains 'image/' and trashed=false",
+                        "q": f"'{folder_id}' in parents and (mimeType contains 'image/' or mimeType contains 'video/') and trashed=false",
                         "key": candidate_key,
                         "maxResults": min(1000, max_photos - len(paginated_photos)),
                         "orderBy": "title",
-                        "fields": "nextPageToken,items(id,title,mimeType,createdDate,imageMediaMetadata)",
+                        "fields": "nextPageToken,items(id,title,mimeType,createdDate,imageMediaMetadata,videoMediaMetadata)",
                     }
                     if page_token:
                         q_params["pageToken"] = page_token
@@ -438,21 +486,31 @@ def fetch_drive_files_public_scrape(folder_id: str, max_photos: int = 3000, cate
                     items = data.get("items", [])
                     for item in items:
                         fid = item["id"]
-                        meta = item.get("imageMediaMetadata") or {}
+                        title = item.get("title", f"MEDIA_{len(paginated_photos)+1}")
+                        mime = item.get("mimeType", "")
+                        is_vid = "video" in mime or title.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"))
+                        meta = item.get("videoMediaMetadata" if is_vid else "imageMediaMetadata") or {}
                         cam = meta.get("cameraMake", "")
                         if meta.get("cameraModel"):
                             cam = f"{cam} {meta.get('cameraModel')}".strip()
                         if not cam:
-                            cam = "Google Drive Shared Folder"
+                            cam = "Google Drive Video" if is_vid else "Google Drive Shared Folder"
+
+                        upload_iso = item.get("createdDate", time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+                        taken_iso = normalize_exif_taken_time(meta.get("date") or meta.get("time") or "", upload_iso)
 
                         paginated_photos.append(
                             {
                                 "id": f"gdrive-{fid}",
                                 "driveFileId": fid,
-                                "name": item.get("title", f"IMG_{len(paginated_photos)+1}.jpg"),
-                                "url": f"/api/drive/image/{fid}?sz=w1600",
+                                "name": title,
+                                "mediaType": "video" if is_vid else "photo",
+                                "url": f"/api/drive/video/{fid}" if is_vid else f"/api/drive/image/{fid}?sz=w1600",
+                                "videoUrl": f"/api/drive/video/{fid}" if is_vid else "",
                                 "thumbUrl": f"/api/drive/image/{fid}?sz=w600",
-                                "createdTime": item.get("createdDate", time.strftime("%Y-%m-%dT%H:%M:%SZ")),
+                                "createdTime": taken_iso,
+                                "takenTime": taken_iso,
+                                "uploadedTime": upload_iso,
                                 "camera": cam,
                                 "category": root_cat,
                                 "personCluster": "",
@@ -494,13 +552,13 @@ def fetch_drive_files_public_scrape(folder_id: str, max_photos: int = 3000, cate
     )
 
     pattern = re.compile(
-        r'"([a-zA-Z0-9_-]{25,44})"\s*,\s*\["[a-zA-Z0-9_-]+"\]\s*,\s*"([^"]+\.(?:jpg|jpeg|png|webp|JPG|JPEG|PNG|WEBP))"'
+        r'"([a-zA-Z0-9_-]{25,44})"\s*,\s*\["[a-zA-Z0-9_-]+"\]\s*,\s*"([^"]+\.(?:jpg|jpeg|png|webp|mp4|mov|m4v|webm|avi|mkv|JPG|JPEG|PNG|WEBP|MP4|MOV|M4V|WEBM))"'
     )
     matches = pattern.findall(unescaped)
 
     if not matches:
         alt_pattern = re.compile(
-            r'"([a-zA-Z0-9_-]{28,35})"(?:[^"]{0,200}?)"([^"/\\]+\.(?:jpg|jpeg|png|webp|JPG|JPEG|PNG|WEBP))"'
+            r'"([a-zA-Z0-9_-]{28,35})"(?:[^"]{0,200}?)"([^"/\\]+\.(?:jpg|jpeg|png|webp|mp4|mov|m4v|webm|avi|mkv|JPG|JPEG|PNG|WEBP|MP4|MOV|M4V|WEBM))"'
         )
         matches = alt_pattern.findall(unescaped)
 
@@ -510,15 +568,18 @@ def fetch_drive_files_public_scrape(folder_id: str, max_photos: int = 3000, cate
         if fid in seen or fid == folder_id:
             continue
         seen.add(fid)
+        is_vid = fname.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"))
         photos.append(
             {
                 "id": f"gdrive-{fid}",
                 "driveFileId": fid,
                 "name": fname,
-                "url": f"/api/drive/image/{fid}?sz=w1600",
+                "mediaType": "video" if is_vid else "photo",
+                "url": f"/api/drive/video/{fid}" if is_vid else f"/api/drive/image/{fid}?sz=w1600",
+                "videoUrl": f"/api/drive/video/{fid}" if is_vid else "",
                 "thumbUrl": f"/api/drive/image/{fid}?sz=w600",
                 "createdTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "camera": "Google Drive Shared Folder",
+                "camera": "Google Drive Video" if is_vid else "Google Drive Shared Folder",
                 "category": "Live Sync",
                 "personCluster": "",
                 "personLabel": "",
@@ -579,6 +640,16 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                     pass
             return self.send_json({"albums": albums, "lanIp": lan_ip, "publicUrl": public_url})
 
+        if path.startswith("/api/drive/video/"):
+            file_id = path.split("/api/drive/video/")[-1].strip("/")
+            video_stream_url = f"https://drive.google.com/uc?id={urllib.parse.quote(file_id)}&export=download"
+            # Return HTTP 302 redirect so browser video player can stream/seek directly with full Range support
+            self.send_response(302)
+            self.send_header("Location", video_stream_url)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+
         if path.startswith("/api/drive/image/"):
             file_id = path.split("/api/drive/image/")[-1].strip("/")
             qs = urllib.parse.parse_qs(parsed.query)
@@ -610,13 +681,24 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
             raw_url = qs.get("url", [""])[0]
             raw_name = qs.get("name", ["OHSOME_Photo.jpg"])[0]
             inline_mode = qs.get("inline", ["0"])[0] == "1"
+            is_vid = "/api/drive/video/" in raw_url or raw_name.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"))
             safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", raw_name)
-            if not safe_name.lower().endswith((".jpg", ".jpeg")):
+            if not is_vid and not safe_name.lower().endswith((".jpg", ".jpeg")):
                 safe_name = re.sub(r"\.[^.]+$", "", safe_name) + ".jpg"
             if not safe_name.startswith("OHSOME_"):
                 safe_name = f"OHSOME_{safe_name}"
 
             try:
+                if is_vid:
+                    # Video direct download from Google Drive
+                    fid = raw_url.split("/api/drive/video/")[-1].split("?")[0].strip("/")
+                    direct_url = f"https://drive.google.com/uc?id={urllib.parse.quote(fid)}&export=download"
+                    self.send_response(302)
+                    self.send_header("Location", direct_url)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    return
+
                 img_bytes = b""
                 if raw_url.startswith("/api/drive/image/"):
                     fid = raw_url.split("/api/drive/image/")[-1].split("?")[0].strip("/")
@@ -711,9 +793,32 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/albums/save":
             albums = body.get("albums")
+            allow_delete = bool(body.get("allowDelete"))
+            deleted_id = body.get("deletedAlbumId")
             if isinstance(albums, list):
-                save_albums(albums)
-                return self.send_json({"ok": True, "albums": albums})
+                if allow_delete:
+                    if deleted_id:
+                        existing = load_albums()
+                        incoming_by_id = {a.get("id"): a for a in albums if isinstance(a, dict) and a.get("id")}
+                        merged = [a for a in albums if isinstance(a, dict) and a.get("id") != deleted_id]
+                        for ex in existing:
+                            ex_id = ex.get("id")
+                            if ex_id and ex_id != deleted_id and ex_id not in incoming_by_id:
+                                merged.append(ex)
+                        save_albums(merged)
+                        return self.send_json({"ok": True, "albums": merged})
+                    save_albums(albums)
+                    return self.send_json({"ok": True, "albums": albums})
+                else:
+                    # Safe merge: preserve all existing albums on server so adding +Event or syncing never wipes an existing event!
+                    existing = load_albums()
+                    incoming_ids = {a.get("id") for a in albums if isinstance(a, dict) and a.get("id")}
+                    merged = list(albums)
+                    for ex in existing:
+                        if isinstance(ex, dict) and ex.get("id") and ex.get("id") not in incoming_ids:
+                            merged.append(ex)
+                    save_albums(merged)
+                    return self.send_json({"ok": True, "albums": merged})
             return self.send_json({"error": "Invalid albums payload"}, status=400)
 
         if path == "/api/tether/upload":

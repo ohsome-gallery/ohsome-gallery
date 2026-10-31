@@ -579,13 +579,15 @@ function App() {
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const [viewMode, setViewMode] = useState(urlParams.get('mode') === 'guest' ? 'guest' : 'admin');
 
-  // Gallery Filter states
+  // Gallery Filter & Sort states
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [mediaTypeFilter, setMediaTypeFilter] = useState('all'); // 'all' | 'photo' | 'video'
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPersonCluster, setSelectedPersonCluster] = useState(null);
   const [faceMatchResults, setFaceMatchResults] = useState(null);
   const [visibleCount, setVisibleCount] = useState(120);
+  const [sortOrder, setSortOrder] = useState('old-to-new'); // 'old-to-new' | 'new-to-old'
 
   // Active modals / drawers
   const [lightboxPhoto, setLightboxPhoto] = useState(null);
@@ -607,6 +609,7 @@ function App() {
   const [lastSyncTime, setLastSyncTime] = useState(new Date().toLocaleTimeString());
   const [toast, setToast] = useState(null);
   const streamIndexRef = useRef(0);
+  const isSavingAlbumsRef = useRef(false);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type });
@@ -615,14 +618,15 @@ function App() {
     }, 4500);
   }, []);
 
-  // Fetch albums from backend (also picks up new tethered photos from iPhone or Tether Inbox)
+  // Fetch albums from backend (safely merges with local state so newly created events are never lost!)
   const refreshAlbumsFromServer = useCallback(() => {
+    if (isSavingAlbumsRef.current) return Promise.resolve();
     return fetch('/api/albums')
       .then((r) => r.json())
       .then((data) => {
         if (data.publicUrl) setPublicUrl(data.publicUrl);
         if (data.lanIp) setLanIp(data.lanIp);
-        if (data.albums && data.albums.length > 0) {
+        if (data.albums && data.albums.length > 0 && !isSavingAlbumsRef.current) {
           setAlbums((prev) => {
             if (prev.length > 0) {
               const prevCount = prev.find((a) => a.id === activeAlbumId)?.photos?.length || 0;
@@ -631,7 +635,10 @@ function App() {
                 showToast(`📸 ${newCount - prevCount} new tethered photo(s) arrived live!`, 'success');
               }
             }
-            return data.albums;
+            // Merge: keep any local albums in prev that aren't in data.albums yet
+            const serverIds = new Set(data.albums.map((a) => a.id));
+            const unsavedLocal = prev.filter((a) => a && a.id && !serverIds.has(a.id));
+            return [...unsavedLocal, ...data.albums];
           });
         }
       })
@@ -664,23 +671,54 @@ function App() {
     [albums, activeAlbumId]
   );
 
-  // Persist album updates to backend
-  const updateAlbumsAndSave = useCallback((updater) => {
+  useEffect(() => {
+    if (activeAlbum?.defaultSortOrder) {
+      setSortOrder(activeAlbum.defaultSortOrder);
+    }
+  }, [activeAlbum?.id, activeAlbum?.defaultSortOrder]);
+
+  // Persist album updates to backend (merges safely so old events are never lost)
+  const updateAlbumsAndSave = useCallback((updater, options = {}) => {
     setAlbums((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
+      isSavingAlbumsRef.current = true;
       fetch('/api/albums/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ albums: next })
-      }).catch(() => {});
+        body: JSON.stringify({
+          albums: next,
+          allowDelete: Boolean(options.allowDelete),
+          deletedAlbumId: options.deletedAlbumId || null
+        })
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && Array.isArray(data.albums) && data.albums.length > 0) {
+            setAlbums((curr) => {
+              const serverById = new Map(data.albums.map((a) => [a.id, a]));
+              const merged = [...curr];
+              data.albums.forEach((srvAlb) => {
+                if (!merged.some((m) => m.id === srvAlb.id)) {
+                  merged.push(srvAlb);
+                }
+              });
+              return merged;
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          isSavingAlbumsRef.current = false;
+        });
       return next;
     });
   }, []);
 
   const updateActiveAlbum = useCallback(
-    (patch) => {
+    (patch, targetAlbumIdOverride = null) => {
+      const targetId = targetAlbumIdOverride || activeAlbumId;
       updateAlbumsAndSave((prev) =>
-        prev.map((alb) => (alb.id === activeAlbumId ? { ...alb, ...(typeof patch === 'function' ? patch(alb) : patch) } : alb))
+        prev.map((alb) => (alb.id === targetId ? { ...alb, ...(typeof patch === 'function' ? patch(alb) : patch) } : alb))
       );
     },
     [activeAlbumId, updateAlbumsAndSave]
@@ -705,6 +743,7 @@ function App() {
           driveApiKey: '',
           autoSyncSeconds: 10,
           aiEnhancePreset: 'radiant',
+          defaultSortOrder: 'old-to-new',
           watermark: {
             enabled: true,
             text: '© OHSOME',
@@ -714,13 +753,13 @@ function App() {
           eventParts: [],
           photos: []
         };
-        updateAlbumsAndSave([freshAlbum]);
+        updateAlbumsAndSave([freshAlbum], { allowDelete: true, deletedAlbumId: albumIdToDelete });
         setActiveAlbumId(freshAlbum.id);
         setSelectedCategory('All');
         setShowDeleteEventModal(false);
         showToast(`Deleted event "${targetTitle}" and created a fresh gallery.`, 'info');
       } else {
-        updateAlbumsAndSave(remaining);
+        updateAlbumsAndSave(remaining, { allowDelete: true, deletedAlbumId: albumIdToDelete });
         if (activeAlbumId === albumIdToDelete) {
           setActiveAlbumId(remaining[0].id);
           setSelectedCategory('All');
@@ -738,13 +777,15 @@ function App() {
 
   // Sync from Google Drive folder
   const syncGoogleDriveNow = useCallback(
-    async (silent = false) => {
-      if (!activeAlbum) return;
-      // Always check server for any new iPhone tethered uploads first
-      await refreshAlbumsFromServer();
+    async (silent = false, albumOverride = null) => {
+      const targetAlbum = albumOverride || activeAlbum;
+      if (!targetAlbum) return;
+      if (!albumOverride) {
+        await refreshAlbumsFromServer();
+      }
 
-      const folderInput = activeAlbum.driveFolderUrl || activeAlbum.driveFolderId;
-      const hasPartDriveLinks = (activeAlbum.eventParts || []).some((pt) => pt.driveFolderUrl);
+      const folderInput = targetAlbum.driveFolderUrl || targetAlbum.driveFolderId;
+      const hasPartDriveLinks = (targetAlbum.eventParts || []).some((pt) => pt.driveFolderUrl);
       if ((!folderInput || folderInput.includes('demo-wedding-folder')) && !hasPartDriveLinks) {
         if (!silent) {
           showToast('Checked iPhone Tether queue & Demo gallery! Connect a real Google Drive folder in "Drive Sync" anytime.', 'info');
@@ -759,10 +800,10 @@ function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            driveFolderUrl: activeAlbum.driveFolderUrl,
-            driveFolderId: activeAlbum.driveFolderId,
-            driveApiKey: activeAlbum.driveApiKey || '',
-            eventParts: activeAlbum.eventParts || []
+            driveFolderUrl: targetAlbum.driveFolderUrl,
+            driveFolderId: targetAlbum.driveFolderId,
+            driveApiKey: targetAlbum.driveApiKey || '',
+            eventParts: targetAlbum.eventParts || []
           })
         });
         const data = await res.json();
@@ -773,15 +814,15 @@ function App() {
 
         if (data.photos && data.photos.length > 0) {
           const existingIds = new Set(
-            activeAlbum.photos.filter((p) => p.id.startsWith('gdrive-')).map((p) => p.id)
+            (targetAlbum.photos || []).filter((p) => p.id.startsWith('gdrive-')).map((p) => p.id)
           );
           const incomingNewCount = data.photos.filter((p) => !existingIds.has(p.id)).length;
           const countChanged = data.photos.length !== existingIds.size;
 
           if (!silent || incomingNewCount > 0 || countChanged) {
             updateActiveAlbum((alb) => {
-              const existingById = new Map(alb.photos.map((p) => [p.id, p]));
-              const localTetherPhotos = alb.photos.filter((p) => !p.id.startsWith('gdrive-'));
+              const existingById = new Map((alb.photos || []).map((p) => [p.id, p]));
+              const localTetherPhotos = (alb.photos || []).filter((p) => !p.id.startsWith('gdrive-'));
               const discoveredParts = new Set();
               const mergedDrive = data.photos.map((incoming) => {
                 if (incoming.category && incoming.category !== 'Live Sync') {
@@ -821,7 +862,7 @@ function App() {
                 eventParts: currentParts,
                 photos: [...localTetherPhotos, ...mergedDrive]
               };
-            });
+            }, targetAlbum.id);
           }
           setLastSyncTime(new Date().toLocaleTimeString());
           if (!silent) {
@@ -909,9 +950,23 @@ function App() {
   // On iPhone / iPad (iOS), opens the instant iPhone Save to Photos / Camera Roll Sheet so WebKit never blocks it!
   const handleDownloadPhoto = async (photo) => {
     if (!activeAlbum || !photo) return;
-    const cleanName = `OHSOME_${(photo.name || 'Photo').replace(/\.[^.]+$/, '')}.jpg`;
-    const directServerUrl = `/api/photo/download?url=${encodeURIComponent(photo.url || '')}&name=${encodeURIComponent(cleanName)}`;
+    const isVid = isVideoItem(photo);
+    const cleanName = isVid
+      ? `OHSOME_${photo.name || 'Video.mp4'}`
+      : `OHSOME_${(photo.name || 'Photo').replace(/\.[^.]+$/, '')}.jpg`;
+    const directServerUrl = `/api/photo/download?url=${encodeURIComponent(photo.videoUrl || photo.url || '')}&name=${encodeURIComponent(cleanName)}`;
     const inlineServerUrl = `${directServerUrl}&inline=1`;
+
+    if (isVid) {
+      showToast(`Starting download for video "${photo.name}"...`, 'info');
+      const a = document.createElement('a');
+      a.href = directServerUrl;
+      a.download = cleanName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
 
     if (isIOSDevice()) {
       // Immediately open the iPhone Save to Photos Sheet on user tap
@@ -1153,11 +1208,59 @@ function App() {
     return Array.from(map.values());
   }, [activeAlbum]);
 
-  // Filtered photos
+  // Parse photo taken date & time into epoch milliseconds (handles EXIF 'YYYY:MM:DD HH:MM:SS' & ISO strings)
+  const getPhotoTimestamp = useCallback((photo) => {
+    const raw = (photo?.takenTime || photo?.createdTime || '').trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/^(\d{4}):(\d{2}):(\d{2})\s+/, '$1-$2-$3T');
+    const ms = Date.parse(normalized);
+    return Number.isNaN(ms) ? 0 : ms;
+  }, []);
+
+  const formatPhotoTakenDateTime = useCallback((photo) => {
+    const ms = getPhotoTimestamp(photo);
+    if (!ms) return '';
+    try {
+      return new Date(ms).toLocaleString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    } catch (e) {
+      return photo?.takenTime || photo?.createdTime || '';
+    }
+  }, [getPhotoTimestamp]);
+
+  // Helper: check if a media item is a video
+  const isVideoItem = useCallback((p) => {
+    if (!p) return false;
+    if (p.mediaType === 'video') return true;
+    const name = (p.name || '').toLowerCase();
+    const url = (p.url || p.videoUrl || '').toLowerCase();
+    return (
+      name.endsWith('.mp4') ||
+      name.endsWith('.mov') ||
+      name.endsWith('.m4v') ||
+      name.endsWith('.webm') ||
+      name.endsWith('.avi') ||
+      name.endsWith('.mkv') ||
+      url.includes('/api/drive/video/') ||
+      url.includes('.mp4') ||
+      url.includes('.mov')
+    );
+  }, []);
+
+  // Filtered & Sorted photos/videos (organized by Photo Taken Date & Time: Old -> New or New -> Old)
   const filteredPhotos = useMemo(() => {
     if (!activeAlbum) return [];
-    return activeAlbum.photos.filter((p) => {
+    const matching = (activeAlbum.photos || []).filter((p) => {
       if (selectedCategory !== 'All' && p.category !== selectedCategory) return false;
+      const isVid = isVideoItem(p);
+      if (mediaTypeFilter === 'video' && !isVid) return false;
+      if (mediaTypeFilter === 'photo' && isVid) return false;
       if (onlyFavorites && !p.favorited) return false;
       if (selectedPersonCluster && p.personCluster !== selectedPersonCluster) return false;
       if (faceMatchResults && !(p.id in faceMatchResults)) return false;
@@ -1171,17 +1274,28 @@ function App() {
       }
       return true;
     });
-  }, [activeAlbum, selectedCategory, onlyFavorites, selectedPersonCluster, faceMatchResults, searchQuery]);
+
+    return [...matching].sort((a, b) => {
+      const tA = getPhotoTimestamp(a);
+      const tB = getPhotoTimestamp(b);
+      if (tA !== tB) {
+        return sortOrder === 'new-to-old' ? tB - tA : tA - tB;
+      }
+      // Tie-breaker for burst shots taken in the same second: natural camera filename order (e.g. DSC_9269 vs DSC_9270)
+      const cmp = (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+      return sortOrder === 'new-to-old' ? -cmp : cmp;
+    });
+  }, [activeAlbum, selectedCategory, mediaTypeFilter, onlyFavorites, selectedPersonCluster, faceMatchResults, searchQuery, sortOrder, getPhotoTimestamp, isVideoItem]);
 
   const visiblePhotos = useMemo(
     () => filteredPhotos.slice(0, visibleCount),
     [filteredPhotos, visibleCount]
   );
 
-  // Reset pagination when album or filters change
+  // Reset pagination when album, filters, or sort order change
   useEffect(() => {
     setVisibleCount(120);
-  }, [activeAlbumId, selectedCategory, onlyFavorites, selectedPersonCluster, faceMatchResults, searchQuery]);
+  }, [activeAlbumId, selectedCategory, mediaTypeFilter, onlyFavorites, selectedPersonCluster, faceMatchResults, searchQuery, sortOrder]);
 
   // Automatic infinite scroll for 2,000+ photo event galleries
   useEffect(() => {
@@ -1539,8 +1653,70 @@ function App() {
                 })}
               </nav>
 
-              {/* Right: Clean Minimalist Client Actions */}
-              <div className="flex items-center gap-3 sm:gap-5 shrink-0">
+              {/* Right: Clean Minimalist Client Actions + Show View Sort Option (Old->New / New->Old) */}
+              <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+                {/* Media Type Filter (All / Photos / Videos) */}
+                <div className="hidden lg:flex items-center border border-stone-300 bg-stone-50/70">
+                  <button
+                    onClick={() => setMediaTypeFilter('all')}
+                    className={`font-editorial text-[9px] uppercase tracking-[0.14em] px-2.5 py-2 transition ${
+                      mediaTypeFilter === 'all'
+                        ? 'bg-stone-900 text-white font-semibold'
+                        : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    All Media
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('photo')}
+                    className={`font-editorial text-[9px] uppercase tracking-[0.14em] px-2.5 py-2 transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'photo'
+                        ? 'bg-stone-900 text-white font-semibold'
+                        : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    <span>📷</span>
+                    <span>Photos</span>
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('video')}
+                    className={`font-editorial text-[9px] uppercase tracking-[0.14em] px-2.5 py-2 transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'video'
+                        ? 'bg-stone-900 text-white font-semibold'
+                        : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    <span>🎬</span>
+                    <span>Videos</span>
+                  </button>
+                </div>
+
+                {/* Sort by Photo Taken Date & Time (Old -> New / New -> Old) */}
+                <div className="hidden sm:flex items-center border border-stone-300 bg-stone-50/70">
+                  <button
+                    onClick={() => setSortOrder('old-to-new')}
+                    className={`font-editorial text-[9px] uppercase tracking-[0.15em] px-2.5 py-2 transition ${
+                      sortOrder === 'old-to-new'
+                        ? 'bg-stone-900 text-white font-semibold'
+                        : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                    title="Show Photos from Oldest to Newest (by Photo Taken Date & Time)"
+                  >
+                    Old → New
+                  </button>
+                  <button
+                    onClick={() => setSortOrder('new-to-old')}
+                    className={`font-editorial text-[9px] uppercase tracking-[0.15em] px-2.5 py-2 transition ${
+                      sortOrder === 'new-to-old'
+                        ? 'bg-stone-900 text-white font-semibold'
+                        : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                    title="Show Photos from Newest to Oldest (by Photo Taken Date & Time)"
+                  >
+                    New → Old
+                  </button>
+                </div>
+
                 {/* AI Face Selfie Search */}
                 <button
                   onClick={() => setShowFaceModal(true)}
@@ -1567,12 +1743,12 @@ function App() {
                   )}
                 </button>
 
-                {/* 1-Click Download All Photos (2MB HD ZIP) */}
+                {/* 1-Click Download All Photos (3MB HD ZIP) */}
                 <button
                   onClick={() => handleDownloadAllPhotos(filteredPhotos, 'All_Photos')}
                   disabled={batchDownloadState?.active}
                   className="font-editorial text-[10px] uppercase tracking-[0.18em] px-3.5 py-2 border border-stone-900 bg-stone-900 text-white hover:bg-stone-800 transition flex items-center gap-1.5 disabled:opacity-50"
-                  title="1-Click Download All Photos (2 MB HD each)"
+                  title="1-Click Download All Photos (3 MB HD each)"
                 >
                   <span>↓</span>
                   <span>
@@ -1593,29 +1769,37 @@ function App() {
               </div>
             </div>
 
-            {/* Mobile Event Part / Subfolder Bar */}
-            <div className="flex md:hidden items-center gap-5 px-4 overflow-x-auto border-t border-stone-100 h-11">
-              {categories.map((cat) => {
-                const isActive = selectedCategory === cat && !onlyFavorites;
-                const count = categoryCounts[cat] ?? 0;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setOnlyFavorites(false);
-                      setSelectedCategory(cat);
-                    }}
-                    className={`h-full flex items-center gap-1 font-editorial text-[10px] uppercase tracking-[0.2em] border-b-2 shrink-0 ${
-                      isActive
-                        ? 'border-stone-900 text-stone-900 font-semibold'
-                        : 'border-transparent text-stone-400'
-                    }`}
-                  >
-                    <span>{cat}</span>
-                    <span className="text-[9px] text-stone-400 font-normal">({count})</span>
-                  </button>
-                );
-              })}
+            {/* Mobile Event Part / Subfolder Bar + Mobile Sort Toggle */}
+            <div className="flex md:hidden items-center justify-between gap-3 px-4 overflow-x-auto border-t border-stone-100 h-11">
+              <div className="flex items-center gap-4 overflow-x-auto h-full">
+                {categories.map((cat) => {
+                  const isActive = selectedCategory === cat && !onlyFavorites;
+                  const count = categoryCounts[cat] ?? 0;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        setOnlyFavorites(false);
+                        setSelectedCategory(cat);
+                      }}
+                      className={`h-full flex items-center gap-1 font-editorial text-[10px] uppercase tracking-[0.2em] border-b-2 shrink-0 ${
+                        isActive
+                          ? 'border-stone-900 text-stone-900 font-semibold'
+                          : 'border-transparent text-stone-400'
+                      }`}
+                    >
+                      <span>{cat}</span>
+                      <span className="text-[9px] text-stone-400 font-normal">({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={() => setSortOrder((prev) => (prev === 'old-to-new' ? 'new-to-old' : 'old-to-new'))}
+                className="shrink-0 font-editorial text-[9px] uppercase tracking-[0.15em] px-2.5 py-1 border border-stone-300 bg-stone-50 text-stone-800"
+              >
+                {sortOrder === 'old-to-new' ? '🕒 Old → New' : '⚡ New → Old'}
+              </button>
             </div>
           </header>
 
@@ -1699,6 +1883,7 @@ function App() {
                 <div className="columns-1 sm:columns-2 md:columns-3 gap-3.5 space-y-3.5">
                   {visiblePhotos.map((photo) => {
                     const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
+                    const isVid = isVideoItem(photo);
                     return (
                       <div
                         key={photo.id}
@@ -1709,12 +1894,25 @@ function App() {
                           src={photo.thumbUrl || photo.url}
                           alt={photo.name}
                           loading="lazy"
-                          style={{ filter: currentPreset.cssFilter }}
+                          style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
                           className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
                         />
 
+                        {/* Video Badge & Play Button Icon */}
+                        {isVid && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/60 backdrop-blur-sm border border-white/80 flex items-center justify-center text-white text-xl pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
+                              ▶
+                            </div>
+                            <span className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-white font-editorial text-[9px] uppercase tracking-[0.16em] flex items-center gap-1 font-semibold">
+                              <span>🎬</span>
+                              <span>Video</span>
+                            </span>
+                          </div>
+                        )}
+
                         {/* Subtle Watermark */}
-                        {activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                        {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
                           <div
                             style={{ opacity: (activeAlbum.watermark.opacity ?? 0.75) * 0.75 }}
                             className={`pointer-events-none select-none absolute text-[9px] font-editorial uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] px-3 py-2 ${
@@ -2006,6 +2204,56 @@ function App() {
                   </span>
                 </button>
 
+                <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setMediaTypeFilter('all')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${
+                      mediaTypeFilter === 'all' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    All Media
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('photo')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'photo' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📷</span>
+                    <span>Photos</span>
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('video')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'video' ? 'bg-rose-500 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🎬</span>
+                    <span>Videos</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setSortOrder('old-to-new')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      sortOrder === 'old-to-new' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                    title="Oldest to Newest by Taken Date"
+                  >
+                    🕒 Old → New
+                  </button>
+                  <button
+                    onClick={() => setSortOrder('new-to-old')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      sortOrder === 'new-to-old' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                    title="Newest to Oldest by Taken Date"
+                  >
+                    ⚡ New → Old
+                  </button>
+                </div>
+
                 <button
                   onClick={() => setShowSubfoldersModal(true)}
                   className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1.5 transition"
@@ -2131,6 +2379,56 @@ function App() {
                   </button>
                 ))}
 
+                <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setMediaTypeFilter('all')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition ${
+                      mediaTypeFilter === 'all' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    All Media
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('photo')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'photo' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <span>📷</span>
+                    <span>Photos</span>
+                  </button>
+                  <button
+                    onClick={() => setMediaTypeFilter('video')}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition flex items-center gap-1 ${
+                      mediaTypeFilter === 'video' ? 'bg-rose-500 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <span>🎬</span>
+                    <span>Videos</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+                  <button
+                    onClick={() => setSortOrder('old-to-new')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      sortOrder === 'old-to-new' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                    title="Oldest to Newest by Taken Date"
+                  >
+                    🕒 Old → New
+                  </button>
+                  <button
+                    onClick={() => setSortOrder('new-to-old')}
+                    className={`px-2 py-1 rounded text-[11px] font-medium transition ${
+                      sortOrder === 'new-to-old' ? 'bg-zinc-800 text-white font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                    title="Newest to Oldest by Taken Date"
+                  >
+                    ⚡ New → Old
+                  </button>
+                </div>
+
                 <button
                   onClick={() => setShowSubfoldersModal(true)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-dashed border-sky-500/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 shrink-0 flex items-center gap-1"
@@ -2215,6 +2513,7 @@ function App() {
                   {visiblePhotos.map((photo) => {
                     const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
                     const isLandingCover = !activeAlbum.customCoverUrl && coverPhoto?.id === photo.id;
+                    const isVid = isVideoItem(photo);
                     return (
                       <div
                         key={photo.id}
@@ -2230,11 +2529,20 @@ function App() {
                             src={photo.thumbUrl || photo.url}
                             alt={photo.name}
                             loading="lazy"
-                            style={{ filter: currentPreset.cssFilter }}
+                            style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           />
 
-                          {activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                          {/* Video Play Overlay */}
+                          {isVid && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-12 h-12 rounded-full bg-black/60 border border-white/80 flex items-center justify-center text-white text-lg pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
+                                ▶
+                              </div>
+                            </div>
+                          )}
+
+                          {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
                             <div
                               style={{ opacity: activeAlbum.watermark.opacity ?? 0.75 }}
                               className={`pointer-events-none select-none absolute text-[10px] font-semibold tracking-wider text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] px-2.5 py-1.5 ${
@@ -2252,6 +2560,12 @@ function App() {
                           )}
 
                           <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                            {isVid && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-sky-500 text-zinc-950 shadow flex items-center gap-1">
+                                <span>🎬</span>
+                                <span>Video</span>
+                              </span>
+                            )}
                             {isLandingCover && (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-400 text-zinc-950 shadow">
                                 ★ Landing Cover
@@ -2421,28 +2735,42 @@ function App() {
               </button>
 
               <div className="relative flex items-center justify-center max-h-[75vh] max-w-full">
-                <img
-                  src={lightboxPhoto.url}
-                  alt={lightboxPhoto.name}
-                  style={{ filter: currentPreset.cssFilter }}
-                  className="max-h-[75vh] max-w-full object-contain shadow-sm"
-                />
-
-                {activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
-                  <div
-                    style={{ opacity: (activeAlbum.watermark.opacity ?? 0.75) * 0.75 }}
-                    className={`pointer-events-none absolute text-xs sm:text-sm font-editorial uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] px-4 py-3 ${
-                      activeAlbum.watermark.position === 'center'
-                        ? 'inset-0 flex items-center justify-center -rotate-12 text-lg'
-                        : activeAlbum.watermark.position === 'bottom-center'
-                        ? 'bottom-2 inset-x-0 text-center'
-                        : activeAlbum.watermark.position === 'top-left'
-                        ? 'top-2 left-2'
-                        : 'bottom-2 right-2'
-                    }`}
+                {isVideoItem(lightboxPhoto) ? (
+                  <video
+                    src={lightboxPhoto.videoUrl || lightboxPhoto.url}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="max-h-[75vh] max-w-full rounded shadow-lg bg-black"
                   >
-                    {activeAlbum.watermark.text}
-                  </div>
+                    Your browser does not support HTML5 video playback.
+                  </video>
+                ) : (
+                  <>
+                    <img
+                      src={lightboxPhoto.url}
+                      alt={lightboxPhoto.name}
+                      style={{ filter: currentPreset.cssFilter }}
+                      className="max-h-[75vh] max-w-full object-contain shadow-sm"
+                    />
+
+                    {activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                      <div
+                        style={{ opacity: (activeAlbum.watermark.opacity ?? 0.75) * 0.75 }}
+                        className={`pointer-events-none absolute text-xs sm:text-sm font-editorial uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] px-4 py-3 ${
+                          activeAlbum.watermark.position === 'center'
+                            ? 'inset-0 flex items-center justify-center -rotate-12 text-lg'
+                            : activeAlbum.watermark.position === 'bottom-center'
+                            ? 'bottom-2 inset-x-0 text-center'
+                            : activeAlbum.watermark.position === 'top-left'
+                            ? 'top-2 left-2'
+                            : 'bottom-2 right-2'
+                        }`}
+                      >
+                        {activeAlbum.watermark.text}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -2479,42 +2807,56 @@ function App() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="relative max-h-[82vh] max-w-full flex items-center justify-center">
-              <img
-                src={lightboxPhoto.url}
-                alt={lightboxPhoto.name}
-                style={{
-                  filter: showBeforeAfter ? 'none' : currentPreset.cssFilter
-                }}
-                className="max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl transition-all duration-200"
-              />
-
-              {!showBeforeAfter && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
-                <div
-                  style={{ opacity: activeAlbum.watermark.opacity ?? 0.75 }}
-                  className={`pointer-events-none absolute text-sm sm:text-base font-semibold tracking-wider text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] px-4 py-3 ${
-                    activeAlbum.watermark.position === 'center'
-                      ? 'inset-0 flex items-center justify-center -rotate-12 text-xl'
-                      : activeAlbum.watermark.position === 'bottom-center'
-                      ? 'bottom-2 inset-x-0 text-center'
-                      : activeAlbum.watermark.position === 'top-left'
-                      ? 'top-2 left-2'
-                      : 'bottom-2 right-2'
-                  }`}
+              {isVideoItem(lightboxPhoto) ? (
+                <video
+                  src={lightboxPhoto.videoUrl || lightboxPhoto.url}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-h-[82vh] max-w-full rounded-lg shadow-2xl bg-black"
                 >
-                  {activeAlbum.watermark.text}
-                </div>
-              )}
+                  Your browser does not support HTML5 video playback.
+                </video>
+              ) : (
+                <>
+                  <img
+                    src={lightboxPhoto.url}
+                    alt={lightboxPhoto.name}
+                    style={{
+                      filter: showBeforeAfter ? 'none' : currentPreset.cssFilter
+                    }}
+                    className="max-h-[82vh] max-w-full object-contain rounded-lg shadow-2xl transition-all duration-200"
+                  />
 
-              <button
-                onMouseDown={() => setShowBeforeAfter(true)}
-                onMouseUp={() => setShowBeforeAfter(false)}
-                onMouseLeave={() => setShowBeforeAfter(false)}
-                onTouchStart={() => setShowBeforeAfter(true)}
-                onTouchEnd={() => setShowBeforeAfter(false)}
-                className="absolute top-3 left-3 px-3 py-1.5 rounded-lg bg-zinc-900/85 hover:bg-zinc-900 text-xs font-medium text-zinc-200 border border-zinc-700 backdrop-blur-md"
-              >
-                {showBeforeAfter ? '👁️ Showing Original Camera File' : `✨ Hold to Compare Original (${currentPreset.name})`}
-              </button>
+                  {!showBeforeAfter && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                    <div
+                      style={{ opacity: activeAlbum.watermark.opacity ?? 0.75 }}
+                      className={`pointer-events-none absolute text-sm sm:text-base font-semibold tracking-wider text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] px-4 py-3 ${
+                        activeAlbum.watermark.position === 'center'
+                          ? 'inset-0 flex items-center justify-center -rotate-12 text-xl'
+                          : activeAlbum.watermark.position === 'bottom-center'
+                          ? 'bottom-2 inset-x-0 text-center'
+                          : activeAlbum.watermark.position === 'top-left'
+                          ? 'top-2 left-2'
+                          : 'bottom-2 right-2'
+                      }`}
+                    >
+                      {activeAlbum.watermark.text}
+                    </div>
+                  )}
+
+                  <button
+                    onMouseDown={() => setShowBeforeAfter(true)}
+                    onMouseUp={() => setShowBeforeAfter(false)}
+                    onMouseLeave={() => setShowBeforeAfter(false)}
+                    onTouchStart={() => setShowBeforeAfter(true)}
+                    onTouchEnd={() => setShowBeforeAfter(false)}
+                    className="absolute top-3 left-3 px-3 py-1.5 rounded-lg bg-zinc-900/85 hover:bg-zinc-900 text-xs font-medium text-zinc-200 border border-zinc-700 backdrop-blur-md"
+                  >
+                    {showBeforeAfter ? '👁️ Showing Original Camera File' : `✨ Hold to Compare Original (${currentPreset.name})`}
+                  </button>
+                </>
+              )}
             </div>
 
             <button
