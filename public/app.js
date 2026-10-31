@@ -602,6 +602,7 @@ function App() {
   const [showCoverPickerModal, setShowCoverPickerModal] = useState(false);
   const [showSubfoldersModal, setShowSubfoldersModal] = useState(false);
   const [showDeleteEventModal, setShowDeleteEventModal] = useState(false);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [bottomUploadReminder, setBottomUploadReminder] = useState(null); // { count: number, albumId: string, time: number }
 
   // Live Sync states
@@ -2190,9 +2191,36 @@ function App() {
                 )}
                 <div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-rose-400 font-medium mb-2">
-                    <span>📸 {activeAlbum.photographer}</span>
+                    <span className="text-zinc-300">📸 {activeAlbum.photographer}</span>
                     <span>•</span>
-                    <span>🗓️ {activeAlbum.eventDate}</span>
+                    <label
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-700/80 text-white cursor-pointer transition text-xs font-semibold group shadow-xs"
+                      title="Click to set Album Event Date"
+                    >
+                      <span>🗓️</span>
+                      <span>{activeAlbum.eventDate || 'Set Date'}</span>
+                      <span className="text-[10px] text-zinc-400 group-hover:text-amber-300 ml-0.5">✏️</span>
+                      <input
+                        type="date"
+                        value={activeAlbum.eventDate || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            updateActiveAlbum({ eventDate: val });
+                            showToast(`Updated Album Date to ${val}!`, 'success');
+                          }
+                        }}
+                        className="sr-only"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditEventModal(true)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition"
+                      title="Edit Event Details (Date, Title, Photographer)"
+                    >
+                      ✏️ Edit Details
+                    </button>
                     <span>•</span>
                     <span className="text-emerald-400 flex items-center gap-1">
                       ● Live Auto-Sync {isLiveSyncEnabled ? `ON (${activeAlbum.autoSyncSeconds || 10}s)` : 'Paused'} • Last check {lastSyncTime}
@@ -2288,6 +2316,15 @@ function App() {
                 >
                   <span>🖼️</span>
                   <span>Choose Landing Photo</span>
+                </button>
+
+                <button
+                  onClick={() => setShowEditEventModal(true)}
+                  className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1.5 transition"
+                  title="Set or Edit Event Date, Title, and Photographer"
+                >
+                  <span>🗓️</span>
+                  <span>Set Date & Event Info</span>
                 </button>
 
                 <button
@@ -3263,6 +3300,16 @@ function App() {
             setShowNewAlbumModal(true);
           }}
           onClose={() => setShowDeleteEventModal(false)}
+        />
+      )}
+
+      {/* Modal 10: Edit Event Date & Details */}
+      {showEditEventModal && (
+        <EditEventModal
+          album={activeAlbum}
+          onUpdate={(patch) => updateActiveAlbum(patch)}
+          onClose={() => setShowEditEventModal(false)}
+          showToast={showToast}
         />
       )}
     </div>
@@ -4612,11 +4659,142 @@ function ClientProofingModal({ album, favoritedPhotos, onToggleFavorite, onDownl
 }
 
 /* ============================================================================
+   Sub-Component: Edit Event Date & Details Modal
+   ============================================================================ */
+function EditEventModal({ album, onUpdate, onClose, showToast }) {
+  const [title, setTitle] = useState(album.title || '');
+  const [photographer, setPhotographer] = useState(album.photographer || 'OHSOME');
+  const [eventDate, setEventDate] = useState(album.eventDate || new Date().toISOString().slice(0, 10));
+  const [subtitle, setSubtitle] = useState(album.subtitle || '');
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      showToast('Event title cannot be empty!', 'error');
+      return;
+    }
+    const cleanDate = eventDate.trim() || new Date().toISOString().slice(0, 10);
+    onUpdate({
+      title: title.trim(),
+      photographer: photographer.trim() || 'OHSOME',
+      eventDate: cleanDate,
+      subtitle: subtitle.trim()
+    });
+    showToast(`Updated Event Date to ${cleanDate}!`, 'success');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <form
+        onSubmit={handleSave}
+        className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🗓️</span>
+            <div>
+              <h2 className="text-base font-bold text-white">Set Event Date & Details</h2>
+              <p className="text-[11px] text-zinc-400">Change event date, title, or photographer for this gallery</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="text-zinc-400 hover:text-white">✕</button>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-zinc-200 mb-1">
+            🗓️ Album Event Date
+          </label>
+          <input
+            type="date"
+            required
+            value={eventDate}
+            onChange={(e) => setEventDate(e.target.value)}
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-700 px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-rose-500"
+          />
+          <div className="flex items-center gap-2 mt-1.5 text-[11px] text-zinc-400">
+            <span>Quick set:</span>
+            <button
+              type="button"
+              onClick={() => setEventDate(new Date().toISOString().slice(0, 10))}
+              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 1);
+                setEventDate(d.toISOString().slice(0, 10));
+              }}
+              className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+            >
+              Yesterday
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-300 mb-1">Event Title</label>
+          <input
+            type="text"
+            required
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-300 mb-1">Studio / Photographer</label>
+          <input
+            type="text"
+            value={photographer}
+            onChange={(e) => setPhotographer(e.target.value)}
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-300 mb-1">Subtitle / Note</label>
+          <input
+            type="text"
+            value={subtitle}
+            onChange={(e) => setSubtitle(e.target.value)}
+            placeholder="Live Event Gallery • Synced with Google Drive"
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="px-5 py-2 rounded-xl text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-500/20"
+          >
+            Save Date & Info
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ============================================================================
    Sub-Component: Create New Event Gallery Modal
    ============================================================================ */
 function NewAlbumModal({ onCreate, onClose }) {
   const [title, setTitle] = useState('');
   const [photographer, setPhotographer] = useState('OHSOME');
+  const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
   const [driveFolderUrl, setDriveFolderUrl] = useState('');
 
   const handleSubmit = (e) => {
@@ -4626,7 +4804,7 @@ function NewAlbumModal({ onCreate, onClose }) {
       id: `event-${Date.now()}`,
       title: title.trim(),
       subtitle: 'Live Event Gallery • Synced with Google Drive & iPhone Tether',
-      eventDate: new Date().toISOString().slice(0, 10),
+      eventDate: eventDate.trim() || new Date().toISOString().slice(0, 10),
       photographer: photographer.trim() || 'Event Photographer',
       driveFolderUrl: driveFolderUrl.trim(),
       driveFolderId: driveFolderUrl.trim(),
@@ -4665,6 +4843,17 @@ function NewAlbumModal({ onCreate, onClose }) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g., Tech Summit 2026 Keynote Live"
             className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-zinc-300 mb-1">🗓️ Event Date</label>
+          <input
+            type="date"
+            required
+            value={eventDate}
+            onChange={(e) => setEventDate(e.target.value)}
+            className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
           />
         </div>
 
@@ -4857,7 +5046,7 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
               <div>
                 <label className="block text-[10px] text-zinc-400 mb-1">Event Date</label>
                 <input
-                  type="text"
+                  type="date"
                   value={album.eventDate || ''}
                   onChange={(e) => onUpdate({ eventDate: e.target.value })}
                   className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs text-white"
