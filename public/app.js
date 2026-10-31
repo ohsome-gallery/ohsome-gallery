@@ -636,6 +636,7 @@ function App() {
   const [showSubfoldersModal, setShowSubfoldersModal] = useState(false);
   const [showDeleteEventModal, setShowDeleteEventModal] = useState(false);
   const [showEditEventModal, setShowEditEventModal] = useState(false);
+  const [videoForThumbnailPicker, setVideoForThumbnailPicker] = useState(null);
   const [bottomUploadReminder, setBottomUploadReminder] = useState(null); // { count: number, albumId: string, time: number }
 
   // Live Sync states
@@ -2028,7 +2029,7 @@ function App() {
                           >
                             {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
                               <video
-                                src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                                src={`${photo.thumbUrl || photo.url}#t=${photo.videoPosterTime || 0.5}`}
                                 preload="metadata"
                                 muted
                                 playsInline
@@ -2725,7 +2726,7 @@ function App() {
                             <div className="relative overflow-hidden bg-zinc-950">
                               {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
                                 <video
-                                  src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                                  src={`${photo.thumbUrl || photo.url}#t=${photo.videoPosterTime || 0.5}`}
                                   preload="metadata"
                                   muted
                                   playsInline
@@ -2802,21 +2803,35 @@ function App() {
                                 {photo.favorited ? '♥' : '♡'}
                               </button>
 
-                              <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
-                                    showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
-                                  }}
-                                  className={`px-2 py-1 rounded text-[10px] font-semibold ${
-                                    isLandingCover
-                                      ? 'bg-amber-400 text-zinc-950'
-                                      : 'bg-black/75 hover:bg-black text-amber-300'
-                                  }`}
-                                >
-                                  {isLandingCover ? '★ Current Cover' : '★ Set Landing Cover'}
-                                </button>
+                              <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between gap-1.5">
+                                {isVid ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setVideoForThumbnailPicker(photo);
+                                    }}
+                                    className="px-2 py-1 rounded text-[10px] font-semibold bg-rose-500 hover:bg-rose-600 text-white shadow flex items-center gap-1"
+                                    title="Choose video timeline frame as thumbnail image"
+                                  >
+                                    <span>⏱️</span>
+                                    <span>Set Thumbnail</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
+                                      showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
+                                    }}
+                                    className={`px-2 py-1 rounded text-[10px] font-semibold ${
+                                      isLandingCover
+                                        ? 'bg-amber-400 text-zinc-950'
+                                        : 'bg-black/75 hover:bg-black text-amber-300'
+                                    }`}
+                                  >
+                                    {isLandingCover ? '★ Current Cover' : '★ Set Landing Cover'}
+                                  </button>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -2832,6 +2847,19 @@ function App() {
                             <div className="px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-zinc-400 bg-zinc-900/90">
                               <span className="truncate" title={photo.name}>{photo.name}</span>
                               <div className="flex items-center gap-1.5 shrink-0">
+                                {isVid && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setVideoForThumbnailPicker(photo);
+                                    }}
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1 transition"
+                                    title="Choose timeline frame as video thumbnail"
+                                  >
+                                    <span>⏱️</span>
+                                    <span>Thumbnail</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -3182,6 +3210,33 @@ function App() {
                 </span>
               </button>
 
+              {/* Video Thumbnail Frame Selector */}
+              {isVideoItem(lightboxPhoto) && (
+                <div className="p-3.5 rounded-xl bg-zinc-950/80 border border-rose-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                      <span>🎬</span>
+                      <span>Video Thumbnail Image</span>
+                    </span>
+                    {lightboxPhoto.videoPosterTime !== undefined && (
+                      <span className="text-[10px] font-mono text-zinc-400">
+                        {lightboxPhoto.videoPosterTime.toFixed(1)}s
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-400 leading-relaxed">
+                    Scrub through the video timeline to pick the exact frame for the gallery thumbnail.
+                  </p>
+                  <button
+                    onClick={() => setVideoForThumbnailPicker(lightboxPhoto)}
+                    className="w-full py-2.5 px-3 rounded-xl text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-500/20 flex items-center justify-center gap-2 transition"
+                  >
+                    <span>⏱️</span>
+                    <span>Choose Timeline & Set Thumbnail</span>
+                  </button>
+                </div>
+              )}
+
               {lightboxPhoto.personCluster && (
                 <div className="p-3 rounded-xl bg-zinc-950/70 border border-zinc-800 flex items-center justify-between">
                   <div className="text-xs">
@@ -3447,6 +3502,25 @@ function App() {
           album={activeAlbum}
           onUpdate={(patch) => updateActiveAlbum(patch)}
           onClose={() => setShowEditEventModal(false)}
+          showToast={showToast}
+        />
+      )}
+
+      {/* Modal 11: Choose Video Timeline Thumbnail Frame */}
+      {videoForThumbnailPicker && (
+        <VideoTimelineThumbnailModal
+          photo={videoForThumbnailPicker}
+          album={activeAlbum}
+          onUpdatePhoto={(updatedPhoto) => {
+            updateActiveAlbum((alb) => ({
+              ...alb,
+              photos: (alb.photos || []).map((p) => (p.id === updatedPhoto.id ? { ...p, ...updatedPhoto } : p))
+            }));
+            if (lightboxPhoto && lightboxPhoto.id === updatedPhoto.id) {
+              setLightboxPhoto((prev) => ({ ...prev, ...updatedPhoto }));
+            }
+          }}
+          onClose={() => setVideoForThumbnailPicker(null)}
           showToast={showToast}
         />
       )}
@@ -5933,6 +6007,359 @@ function DeleteEventModal({
             className="px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
           >
             Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   Modal 11: Choose Video Timeline Frame as Thumbnail Image
+   ============================================================================ */
+function VideoTimelineThumbnailModal({
+  photo,
+  album,
+  onUpdatePhoto,
+  onClose,
+  showToast
+}) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(photo.videoPosterTime || 0.5);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [capturedPreviewUrl, setCapturedPreviewUrl] = useState(null);
+  const [captureStatus, setCaptureStatus] = useState('ready'); // 'ready' | 'captured' | 'failed'
+
+  const videoUrl = photo.videoUrl || photo.url || (photo.driveFileId ? `/api/drive/video/${photo.driveFileId}` : '');
+
+  const formatTime = (secs) => {
+    if (isNaN(secs) || secs < 0) return '00:00.0';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    const tenths = Math.floor((secs % 1) * 10);
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}.${tenths}`;
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      const dur = videoRef.current.duration;
+      if (dur && !isNaN(dur)) setDuration(dur);
+      const initialTime = Math.min(Math.max(0.1, photo.videoPosterTime || 0.5), (dur && !isNaN(dur) ? dur : 100));
+      videoRef.current.currentTime = initialTime;
+      setCurrentTime(initialTime);
+      setTimeout(() => captureFrame(), 300);
+    }
+  };
+
+  const handleSeek = (newTime) => {
+    if (!videoRef.current) return;
+    const clamped = Math.max(0, Math.min(duration || 1000, newTime));
+    videoRef.current.currentTime = clamped;
+    setCurrentTime(clamped);
+  };
+
+  const stepTime = (delta) => {
+    if (!videoRef.current) return;
+    handleSeek(videoRef.current.currentTime + delta);
+  };
+
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play();
+      setIsPlaying(true);
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+      setTimeout(() => captureFrame(), 150);
+    }
+  };
+
+  const captureFrame = () => {
+    if (!videoRef.current) return null;
+    try {
+      const video = videoRef.current;
+      const canvas = canvasRef.current || document.createElement('canvas');
+      canvas.width = Math.min(video.videoWidth || 1280, 1920);
+      canvas.height = Math.min(video.videoHeight || 720, 1080);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      setCapturedPreviewUrl(dataUrl);
+      setCaptureStatus('captured');
+      return dataUrl;
+    } catch (err) {
+      console.warn('Canvas frame extraction restricted by origin:', err);
+      setCaptureStatus('fallback');
+      return null;
+    }
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    let dataUrl = captureFrame() || capturedPreviewUrl;
+
+    try {
+      const res = await fetch('/api/video/thumbnail', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          albumId: album.id,
+          photoId: photo.id,
+          dataUrl: dataUrl || '',
+          timelineSeconds: currentTime
+        })
+      });
+
+      const data = await res.json();
+      if (data && data.ok) {
+        onUpdatePhoto(data.photo);
+        showToast(`✅ Set video thumbnail from timeline at ${formatTime(currentTime)}!`, 'success');
+        onClose();
+      } else {
+        throw new Error(data.error || 'Server failed to save thumbnail');
+      }
+    } catch (err) {
+      showToast(`Failed to save video thumbnail: ${err.message}`, 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl rounded-2xl bg-zinc-900 border border-zinc-800 p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[92vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-zinc-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎬</span>
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                Choose Video Thumbnail Frame
+              </h3>
+            </div>
+            <p className="text-xs text-zinc-400 mt-1">
+              Scrub through the video timeline to choose the exact frame to display as the thumbnail image.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-sm"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Video Player Display */}
+        <div className="relative rounded-xl overflow-hidden bg-black flex items-center justify-center max-h-[46vh] border border-zinc-800 shadow-inner">
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            crossOrigin="anonymous"
+            playsInline
+            preload="auto"
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={() => {
+              if (videoRef.current) {
+                setCurrentTime(videoRef.current.currentTime);
+              }
+            }}
+            onSeeked={() => captureFrame()}
+            onClick={togglePlay}
+            className="max-h-[46vh] w-auto max-w-full block mx-auto cursor-pointer"
+          />
+
+          {/* Hidden Canvas for High-Res JPEG extraction */}
+          <canvas ref={canvasRef} className="hidden" />
+
+          {/* Play/Pause Overlay indicator */}
+          <button
+            type="button"
+            onClick={togglePlay}
+            className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-black/70 hover:bg-black/90 text-white text-xs font-semibold backdrop-blur-sm border border-white/20 flex items-center gap-1.5 transition"
+          >
+            <span>{isPlaying ? '⏸ Pause' : '▶ Play'}</span>
+          </button>
+
+          {/* Current Frame Timestamp Badge */}
+          <div className="absolute bottom-3 right-3 px-3 py-1.5 rounded-lg bg-black/75 text-rose-300 font-mono text-xs font-bold border border-rose-500/30 backdrop-blur-sm">
+            ⏱️ {formatTime(currentTime)}
+          </div>
+        </div>
+
+        {/* Timeline Range Scrubber */}
+        <div className="space-y-2 p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800">
+          <div className="flex items-center justify-between text-xs text-zinc-300">
+            <span className="font-semibold text-rose-400 flex items-center gap-1.5">
+              <span>🎞️</span>
+              <span>Scrub Video Timeline:</span>
+            </span>
+            <span className="font-mono text-xs font-bold text-zinc-200">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
+
+          {/* Slider */}
+          <input
+            type="range"
+            min="0"
+            max={duration || 100}
+            step="0.05"
+            value={currentTime}
+            onChange={(e) => handleSeek(parseFloat(e.target.value))}
+            className="w-full h-2.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
+          />
+
+          {/* Quick Jump Percentages */}
+          <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-400">
+            <button
+              type="button"
+              onClick={() => handleSeek(0.1)}
+              className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 hover:text-white border border-zinc-800 transition"
+            >
+              Start (0s)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSeek((duration || 10) * 0.25)}
+              className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 hover:text-white border border-zinc-800 transition"
+            >
+              25%
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSeek((duration || 10) * 0.5)}
+              className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 hover:text-white border border-zinc-800 transition"
+            >
+              Midpoint (50%)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSeek((duration || 10) * 0.75)}
+              className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 hover:text-white border border-zinc-800 transition"
+            >
+              75%
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSeek(Math.max(0, (duration || 10) - 0.5))}
+              className="px-2 py-0.5 rounded bg-zinc-900 hover:bg-zinc-800 hover:text-white border border-zinc-800 transition"
+            >
+              End
+            </button>
+          </div>
+
+          {/* Precision Frame Step Buttons */}
+          <div className="flex items-center justify-center gap-1.5 pt-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => stepTime(-5)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs border border-zinc-800"
+              title="Back 5 seconds"
+            >
+              ⏪ -5s
+            </button>
+            <button
+              type="button"
+              onClick={() => stepTime(-1)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs border border-zinc-800"
+              title="Back 1 second"
+            >
+              ‹ -1s
+            </button>
+            <button
+              type="button"
+              onClick={() => stepTime(-0.1)}
+              className="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs border border-zinc-700"
+              title="Previous frame (0.1s)"
+            >
+              ◀ Frame (-0.1s)
+            </button>
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="px-3.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-semibold text-xs border border-rose-500/40"
+            >
+              {isPlaying ? '⏸' : '▶'}
+            </button>
+            <button
+              type="button"
+              onClick={() => stepTime(0.1)}
+              className="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs border border-zinc-700"
+              title="Next frame (0.1s)"
+            >
+              Frame (+0.1s) ▶
+            </button>
+            <button
+              type="button"
+              onClick={() => stepTime(1)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs border border-zinc-800"
+              title="Forward 1 second"
+            >
+              +1s ›
+            </button>
+            <button
+              type="button"
+              onClick={() => stepTime(5)}
+              className="px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs border border-zinc-800"
+              title="Forward 5 seconds"
+            >
+              +5s ⏩
+            </button>
+          </div>
+        </div>
+
+        {/* Selected Frame vs Current Thumbnail Preview Strip */}
+        <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80">
+          <div className="w-24 h-16 rounded-lg overflow-hidden bg-black border border-zinc-700 shrink-0 relative flex items-center justify-center">
+            {capturedPreviewUrl ? (
+              <img src={capturedPreviewUrl} alt="Captured preview" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[10px] text-zinc-500">Preview</span>
+            )}
+            <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/80 text-[8px] font-bold text-rose-300">
+              New
+            </span>
+          </div>
+
+          <div className="flex-1 min-w-0 text-xs">
+            <div className="font-semibold text-zinc-200">
+              Selected Frame: <span className="text-rose-400 font-mono">{formatTime(currentTime)}</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 mt-0.5 truncate">
+              {capturedPreviewUrl ? 'High-resolution JPEG frame captured from timeline' : 'Click "Set Thumbnail Image" to save this exact moment'}
+            </p>
+          </div>
+        </div>
+
+        {/* Modal Action Buttons */}
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-5 py-2.5 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white shadow-lg shadow-rose-500/25 flex items-center gap-2 transition"
+          >
+            <span>{isSaving ? '⚡' : '📸'}</span>
+            <span>
+              {isSaving ? 'Saving Thumbnail...' : `Set Timeline ${formatTime(currentTime)} as Thumbnail Image`}
+            </span>
           </button>
         </div>
       </div>

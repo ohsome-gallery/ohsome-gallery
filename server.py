@@ -613,6 +613,16 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def end_headers(self):
+        try:
+            buf = getattr(self, "_headers_buffer", [])
+            has_cors = any(b"Access-Control-Allow-Origin" in h for h in buf)
+            if not has_cors:
+                self.send_header("Access-Control-Allow-Origin", "*")
+        except Exception:
+            pass
+        super().end_headers()
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -968,6 +978,64 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
             save_albums(albums)
             print(f"🗑️ Deleted album: {album_id}", flush=True)
             return self.send_json({"ok": True, "albums": albums})
+
+        if path == "/api/video/thumbnail":
+            album_id = body.get("albumId")
+            photo_id = body.get("photoId")
+            data_url = body.get("dataUrl", "")
+            timeline_seconds = float(body.get("timelineSeconds", 0.0))
+
+            if not photo_id:
+                return self.send_json({"error": "Missing photoId"}, status=400)
+
+            albums = load_albums()
+            target_album = next((a for a in albums if a.get("id") == album_id), albums[0] if albums else None)
+            target_photo = None
+            if target_album:
+                target_photo = next((p for p in target_album.get("photos", []) if p.get("id") == photo_id), None)
+
+            if not target_photo:
+                for alb in albums:
+                    for p in alb.get("photos", []):
+                        if p.get("id") == photo_id:
+                            target_album = alb
+                            target_photo = p
+                            break
+                    if target_photo:
+                        break
+
+            if not target_photo:
+                return self.send_json({"error": "Video item not found"}, status=404)
+
+            new_thumb_url = ""
+            if data_url and "," in data_url:
+                try:
+                    _, b64_data = data_url.split(",", 1)
+                    img_bytes = base64.b64decode(b64_data)
+                    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", photo_id)
+                    thumb_filename = f"thumb_{int(time.time()*1000)}_{safe_id}.jpg"
+                    thumb_path = UPLOADS_DIR / thumb_filename
+                    with open(thumb_path, "wb") as f:
+                        f.write(img_bytes)
+                    new_thumb_url = f"/uploads/{thumb_filename}"
+                except Exception as e:
+                    print(f"Error saving video thumbnail image: {e}", flush=True)
+
+            if not new_thumb_url:
+                base_vid = target_photo.get("videoUrl") or target_photo.get("url")
+                new_thumb_url = f"{base_vid}#t={timeline_seconds:.2f}"
+
+            target_photo["thumbUrl"] = new_thumb_url
+            target_photo["videoPosterTime"] = round(timeline_seconds, 2)
+            save_albums(albums)
+            print(f"✅ Video '{photo_id}' thumbnail set from timeline {timeline_seconds:.2f}s -> {new_thumb_url}", flush=True)
+            return self.send_json({
+                "ok": True,
+                "thumbUrl": new_thumb_url,
+                "videoPosterTime": target_photo["videoPosterTime"],
+                "photo": target_photo,
+                "albums": albums
+            })
 
         if path == "/api/albums/save":
             albums = body.get("albums")
