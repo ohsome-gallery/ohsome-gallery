@@ -6082,9 +6082,10 @@ function VideoTimelineThumbnailModal({
     if (!videoRef.current) return null;
     try {
       const video = videoRef.current;
+      if (!video.videoWidth || !video.videoHeight) return null;
       const canvas = canvasRef.current || document.createElement('canvas');
-      canvas.width = Math.min(video.videoWidth || 1280, 1920);
-      canvas.height = Math.min(video.videoHeight || 720, 1080);
+      canvas.width = Math.min(video.videoWidth, 1920);
+      canvas.height = Math.min(video.videoHeight, 1080);
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
@@ -6164,17 +6165,18 @@ function VideoTimelineThumbnailModal({
           <video
             ref={videoRef}
             src={videoUrl}
+            controls
             crossOrigin="anonymous"
             playsInline
             preload="auto"
             onLoadedMetadata={handleLoadedMetadata}
+            onCanPlay={() => captureFrame()}
             onTimeUpdate={() => {
               if (videoRef.current) {
                 setCurrentTime(videoRef.current.currentTime);
               }
             }}
             onSeeked={() => captureFrame()}
-            onClick={togglePlay}
             className="max-h-[46vh] w-auto max-w-full block mx-auto cursor-pointer"
           />
 
