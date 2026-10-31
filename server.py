@@ -215,6 +215,11 @@ def _write_albums_unlocked(albums):
     tmp_file = ALBUMS_FILE.with_suffix(".json.tmp")
     with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(albums, f, indent=2)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except Exception:
+            pass
     os.replace(str(tmp_file), str(ALBUMS_FILE))
 
 
@@ -866,11 +871,80 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
             save_albums(albums)
             return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_item, "albums": albums})
 
-        raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        body_bytes = bytearray()
+        remaining = length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            body_bytes.extend(chunk)
+            remaining -= len(chunk)
+
         try:
+            raw_body = body_bytes.decode("utf-8") if body_bytes else "{}"
             body = json.loads(raw_body)
-        except Exception:
+        except Exception as err:
             body = {}
+
+        if path == "/api/album/create":
+            album = body.get("album")
+            if not isinstance(album, dict) or not album.get("title"):
+                return self.send_json({"error": "Missing album data or title"}, status=400)
+            albums = load_albums()
+            album_id = album.get("id") or f"event-{int(time.time()*1000)}"
+            album["id"] = album_id
+            album.setdefault("photos", [])
+            album.setdefault("eventParts", [])
+            album.setdefault("subtitle", "Live Event Gallery • Synced with Google Drive")
+            album.setdefault("eventDate", time.strftime("%Y-%m-%d"))
+            album.setdefault("photographer", "OHSOME")
+            album.setdefault("autoSyncSeconds", 10)
+            album.setdefault("aiEnhancePreset", "radiant")
+            album.setdefault("defaultSortOrder", "old-to-new")
+            album.setdefault(
+                "watermark",
+                {
+                    "enabled": True,
+                    "text": f"© {str(album.get('photographer') or 'STUDIO').upper()}",
+                    "position": "bottom-right",
+                    "opacity": 0.75,
+                },
+            )
+            # Prepend the new album
+            albums = [a for a in albums if isinstance(a, dict) and a.get("id") != album_id]
+            albums.insert(0, album)
+            save_albums(albums)
+            print(f"✅ Created and persisted new event gallery: '{album.get('title')}' (ID: {album_id})", flush=True)
+            return self.send_json({"ok": True, "album": album, "albums": albums})
+
+        if path == "/api/album/update":
+            album_id = body.get("id")
+            patch = body.get("patch") or {}
+            if not album_id or not isinstance(patch, dict):
+                return self.send_json({"error": "Missing album id or patch"}, status=400)
+            albums = load_albums()
+            updated = False
+            for alb in albums:
+                if isinstance(alb, dict) and alb.get("id") == album_id:
+                    for k, v in patch.items():
+                        alb[k] = v
+                    updated = True
+                    break
+            if updated:
+                save_albums(albums)
+                print(f"✅ Updated album '{album_id}': {list(patch.keys())}", flush=True)
+                return self.send_json({"ok": True, "albums": albums})
+            return self.send_json({"error": f"Album '{album_id}' not found"}, status=404)
+
+        if path == "/api/album/delete":
+            album_id = body.get("id")
+            if not album_id:
+                return self.send_json({"error": "Missing album id"}, status=400)
+            albums = load_albums()
+            albums = [a for a in albums if isinstance(a, dict) and a.get("id") != album_id]
+            save_albums(albums)
+            print(f"🗑️ Deleted album: {album_id}", flush=True)
+            return self.send_json({"ok": True, "albums": albums})
 
         if path == "/api/albums/save":
             albums = body.get("albums")

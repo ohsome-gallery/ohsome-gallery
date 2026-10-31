@@ -719,6 +719,13 @@ function App() {
   const updateActiveAlbum = useCallback(
     (patch, targetAlbumIdOverride = null) => {
       const targetId = targetAlbumIdOverride || activeAlbumId;
+      if (typeof patch === 'object' && patch !== null && !('photos' in patch)) {
+        fetch('/api/album/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: targetId, patch })
+        }).catch((e) => console.warn('Failed to update album metadata on server', e));
+      }
       updateAlbumsAndSave((prev) =>
         prev.map((alb) => (alb.id === targetId ? { ...alb, ...(typeof patch === 'function' ? patch(alb) : patch) } : alb))
       );
@@ -732,6 +739,12 @@ function App() {
       const targetAlb = albums.find((a) => a.id === albumIdToDelete);
       const targetTitle = targetAlb ? targetAlb.title : 'Event';
       const remaining = albums.filter((a) => a.id !== albumIdToDelete);
+
+      fetch('/api/album/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: albumIdToDelete })
+      }).catch((e) => console.warn('Failed to delete album on server', e));
 
       if (remaining.length === 0) {
         const freshAlbum = {
@@ -882,6 +895,44 @@ function App() {
       }
     },
     [activeAlbum, refreshAlbumsFromServer, showToast, updateActiveAlbum]
+  );
+
+  // Directly create and atomically persist a new Event Gallery
+  const handleCreateAlbum = useCallback(
+    async (newAlb) => {
+      // 1. Optimistically display in UI immediately
+      setAlbums((prev) => [newAlb, ...prev.filter((a) => a.id !== newAlb.id)]);
+      setActiveAlbumId(newAlb.id);
+      setSelectedCategory('All');
+      setSelectedPersonCluster(null);
+      setFaceMatchResults(null);
+      setShowNewAlbumModal(false);
+      showToast(`Created event gallery "${newAlb.title}"!`, 'success');
+
+      // 2. Persist to server via lightweight atomic endpoint
+      try {
+        isSavingAlbumsRef.current = true;
+        const res = await fetch('/api/album/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ album: newAlb })
+        });
+        const data = await res.json();
+        if (data && data.ok && Array.isArray(data.albums)) {
+          setAlbums(data.albums);
+        }
+      } catch (err) {
+        console.error('Failed to persist new album to server:', err);
+      } finally {
+        isSavingAlbumsRef.current = false;
+      }
+
+      // 3. Kick off Drive sync if configured
+      if (newAlb.driveFolderUrl) {
+        setTimeout(() => syncGoogleDriveNow(false, newAlb), 300);
+      }
+    },
+    [syncGoogleDriveNow, showToast]
   );
 
   // Periodic auto-sync polling
@@ -3247,12 +3298,7 @@ function App() {
       {/* Modal 6: Create New Event Gallery */}
       {showNewAlbumModal && (
         <NewAlbumModal
-          onCreate={(newAlb) => {
-            updateAlbumsAndSave((prev) => [newAlb, ...prev]);
-            setActiveAlbumId(newAlb.id);
-            setShowNewAlbumModal(false);
-            showToast(`Created event gallery "${newAlb.title}"!`, 'success');
-          }}
+          onCreate={handleCreateAlbum}
           onClose={() => setShowNewAlbumModal(false)}
         />
       )}
