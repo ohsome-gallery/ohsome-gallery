@@ -239,20 +239,25 @@ def ingest_tether_inbox_files(albums):
     for img_path in sorted(TETHER_INBOX_DIR.glob("*")):
         if not img_path.is_file():
             continue
-        if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".heic"}:
+        if img_path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".heic", ".mp4", ".mov", ".m4v", ".webm"}:
             continue
         safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", img_path.name)
         dest_path = UPLOADS_DIR / safe_name
         shutil.move(str(img_path), str(dest_path))
 
         if safe_name not in existing_names:
+            is_video = img_path.suffix.lower() in {".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv"}
             new_photo = {
                 "id": f"tether-{int(time.time()*1000)}-{safe_name}",
                 "name": safe_name,
+                "mediaType": "video" if is_video else "photo",
                 "url": f"/uploads/{safe_name}",
+                "videoUrl": f"/uploads/{safe_name}" if is_video else "",
                 "thumbUrl": f"/uploads/{safe_name}",
                 "createdTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "camera": "Mirrorless Tether Inbox",
+                "takenTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "uploadedTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "camera": "Mirrorless Tether Inbox Video" if is_video else "Mirrorless Tether Inbox",
                 "category": "Camera Tether",
                 "personCluster": "",
                 "personLabel": "",
@@ -690,7 +695,19 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
 
             try:
                 if is_vid:
-                    # Video direct download from Google Drive
+                    # Video download: local upload or Google Drive
+                    if raw_url.startswith("/uploads/"):
+                        local_path = PUBLIC_DIR / raw_url.lstrip("/")
+                        if local_path.is_file():
+                            self.send_response(200)
+                            self.send_header("Content-Type", "video/mp4")
+                            self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+                            self.send_header("Content-Length", str(local_path.stat().st_size))
+                            self.send_header("Access-Control-Allow-Origin", "*")
+                            self.end_headers()
+                            with open(local_path, "rb") as vf:
+                                shutil.copyfileobj(vf, self.wfile)
+                            return
                     fid = raw_url.split("/api/drive/video/")[-1].split("?")[0].strip("/")
                     direct_url = f"https://drive.google.com/uc?id={urllib.parse.quote(fid)}&export=download"
                     self.send_response(302)
@@ -785,6 +802,70 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         length = int(self.headers.get("Content-Length", 0))
+
+        if path == "/api/media/upload":
+            qs = urllib.parse.parse_qs(parsed.query)
+            album_id = qs.get("albumId", [""])[0]
+            raw_name = qs.get("name", ["media_upload.mp4"])[0]
+            file_name = urllib.parse.unquote(raw_name)
+            category = urllib.parse.unquote(qs.get("category", ["Camera Tether"])[0])
+            camera_meta = urllib.parse.unquote(qs.get("camera", ["Camera Tether Video"])[0])
+            media_type = qs.get("mediaType", ["video"])[0]
+            created_time = qs.get("createdTime", [""])[0] or time.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", file_name)
+            unique_prefix = str(int(time.time() * 1000))[-5:]
+            stored_filename = f"{unique_prefix}_{safe_name}"
+            file_path = UPLOADS_DIR / stored_filename
+
+            # Stream binary body directly to disk
+            with open(file_path, "wb") as f:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    remaining -= len(chunk)
+
+            albums = load_albums()
+            target_album = next((a for a in albums if a.get("id") == album_id), albums[0] if albums else None)
+            if not target_album:
+                return self.send_json({"error": "No active album found"}, status=404)
+
+            # Check duplicate by filename
+            for existing in target_album.get("photos", []):
+                if existing.get("name") == file_name:
+                    return self.send_json({
+                        "ok": True,
+                        "skippedDuplicate": True,
+                        "photo": existing,
+                        "albums": albums,
+                    })
+
+            is_video = bool(media_type == "video" or file_name.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")))
+            new_item = {
+                "id": f"upload-{int(time.time()*1000)}-{safe_name}",
+                "name": file_name,
+                "mediaType": "video" if is_video else "photo",
+                "url": f"/uploads/{stored_filename}",
+                "videoUrl": f"/uploads/{stored_filename}" if is_video else "",
+                "thumbUrl": f"/uploads/{stored_filename}",
+                "createdTime": created_time,
+                "takenTime": created_time,
+                "uploadedTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "camera": camera_meta,
+                "category": category,
+                "personCluster": "",
+                "personLabel": "",
+                "favorited": False,
+                "clientNote": "",
+                "isNewLive": True,
+            }
+            target_album.setdefault("photos", []).insert(0, new_item)
+            save_albums(albums)
+            return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_item, "albums": albums})
+
         raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
         try:
             body = json.loads(raw_body)
@@ -863,12 +944,17 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                         "albums": albums,
                     })
 
+            is_video = bool(body.get("mediaType") == "video" or file_name.lower().endswith((".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")))
             new_photo = {
                 "id": f"tether-{int(time.time()*1000)}-{safe_name}",
                 "name": file_name,
+                "mediaType": "video" if is_video else "photo",
                 "url": f"/uploads/{stored_filename}",
+                "videoUrl": f"/uploads/{stored_filename}" if is_video else "",
                 "thumbUrl": f"/uploads/{stored_filename}",
                 "createdTime": body.get("createdTime") or time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "takenTime": body.get("createdTime") or time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "uploadedTime": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "camera": camera_meta,
                 "category": category,
                 "personCluster": "",

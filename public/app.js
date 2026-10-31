@@ -1075,6 +1075,18 @@ function App() {
           const results = await Promise.all(
             batch.map(async (photo) => {
               try {
+                if (isVideoItem(photo)) {
+                  // Video file download directly
+                  const vRes = await fetch(`/api/photo/download?url=${encodeURIComponent(photo.videoUrl || photo.url)}&name=${encodeURIComponent(photo.name || 'video.mp4')}`);
+                  const vBuf = await vRes.arrayBuffer();
+                  const vBytes = new Uint8Array(vBuf);
+                  let vName = `OHSOME_${photo.name || 'video.mp4'}`;
+                  if (usedNames.has(vName)) {
+                    vName = `OHSOME_${completed + 1}_${photo.name || 'video.mp4'}`;
+                  }
+                  usedNames.add(vName);
+                  return { name: vName, bytes: vBytes };
+                }
                 const bytes = await renderProcessedPhotoBytes2MB(
                   photo,
                   activeAlbum.aiEnhancePreset || 'original',
@@ -1890,13 +1902,23 @@ function App() {
                         onClick={() => setLightboxPhoto(photo)}
                         className="group relative break-inside-avoid overflow-hidden bg-stone-100 cursor-pointer"
                       >
-                        <img
-                          src={photo.thumbUrl || photo.url}
-                          alt={photo.name}
-                          loading="lazy"
-                          style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                          className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
-                        />
+                        {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
+                          <video
+                            src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                            preload="metadata"
+                            muted
+                            playsInline
+                            className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                          />
+                        ) : (
+                          <img
+                            src={photo.thumbUrl || photo.url}
+                            alt={photo.name}
+                            loading="lazy"
+                            style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
+                            className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                          />
+                        )}
 
                         {/* Video Badge & Play Button Icon */}
                         {isVid && (
@@ -2079,8 +2101,8 @@ function App() {
                   onClick={() => setShowTetherModal(true)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition"
                 >
-                  <span>🔌</span>
-                  <span>Camera → iPhone Tether</span>
+                  <span>➕</span>
+                  <span>Upload Photos & Videos / Tether</span>
                 </button>
 
                 <button
@@ -2276,8 +2298,8 @@ function App() {
                   onClick={() => setShowTetherModal(true)}
                   className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-zinc-950 shadow flex items-center gap-1.5 transition"
                 >
-                  <span>🔌</span>
-                  <span>Import from Camera (USB-C / iPhone)</span>
+                  <span>🎬</span>
+                  <span>Upload Photos & Videos (Camera / Computer)</span>
                 </button>
 
                 <button
@@ -2525,13 +2547,23 @@ function App() {
                         }`}
                       >
                         <div className="relative aspect-[4/3] overflow-hidden bg-zinc-950">
-                          <img
-                            src={photo.thumbUrl || photo.url}
-                            alt={photo.name}
-                            loading="lazy"
-                            style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
+                          {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
+                            <video
+                              src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                          ) : (
+                            <img
+                              src={photo.thumbUrl || photo.url}
+                              alt={photo.name}
+                              loading="lazy"
+                              style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                          )}
 
                           {/* Video Play Overlay */}
                           {isVid && (
@@ -2736,15 +2768,24 @@ function App() {
 
               <div className="relative flex items-center justify-center max-h-[75vh] max-w-full">
                 {isVideoItem(lightboxPhoto) ? (
-                  <video
-                    src={lightboxPhoto.videoUrl || lightboxPhoto.url}
-                    controls
-                    autoPlay
-                    playsInline
-                    className="max-h-[75vh] max-w-full rounded shadow-lg bg-black"
-                  >
-                    Your browser does not support HTML5 video playback.
-                  </video>
+                  lightboxPhoto.driveFileId ? (
+                    <iframe
+                      src={`https://drive.google.com/file/d/${lightboxPhoto.driveFileId}/preview`}
+                      className="w-[85vw] max-w-4xl h-[70vh] rounded shadow-lg bg-black border-0"
+                      allow="autoplay; fullscreen"
+                      title={lightboxPhoto.name}
+                    />
+                  ) : (
+                    <video
+                      src={lightboxPhoto.videoUrl || lightboxPhoto.url}
+                      controls
+                      autoPlay
+                      playsInline
+                      className="max-h-[75vh] max-w-full rounded shadow-lg bg-black"
+                    >
+                      Your browser does not support HTML5 video playback.
+                    </video>
+                  )
                 ) : (
                   <>
                     <img
@@ -2808,15 +2849,24 @@ function App() {
           >
             <div className="relative max-h-[82vh] max-w-full flex items-center justify-center">
               {isVideoItem(lightboxPhoto) ? (
-                <video
-                  src={lightboxPhoto.videoUrl || lightboxPhoto.url}
-                  controls
-                  autoPlay
-                  playsInline
-                  className="max-h-[82vh] max-w-full rounded-lg shadow-2xl bg-black"
-                >
-                  Your browser does not support HTML5 video playback.
-                </video>
+                lightboxPhoto.driveFileId ? (
+                  <iframe
+                    src={`https://drive.google.com/file/d/${lightboxPhoto.driveFileId}/preview`}
+                    className="w-[85vw] max-w-4xl h-[75vh] rounded-lg shadow-2xl bg-black border-0"
+                    allow="autoplay; fullscreen"
+                    title={lightboxPhoto.name}
+                  />
+                ) : (
+                  <video
+                    src={lightboxPhoto.videoUrl || lightboxPhoto.url}
+                    controls
+                    autoPlay
+                    playsInline
+                    className="max-h-[82vh] max-w-full rounded-lg shadow-2xl bg-black"
+                  >
+                    Your browser does not support HTML5 video playback.
+                  </video>
+                )
               ) : (
                 <>
                   <img
@@ -3220,34 +3270,43 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
     [album.photos]
   );
 
-  // Step 1: Load photos from Camera / iPhone into the Pre-Upload Selection Grid (does NOT upload until user clicks "Upload Selected")
+  // Step 1: Load photos and videos into the Pre-Upload Review Grid
   const handleCameraFilesSelected = async (e) => {
     const rawFiles = Array.from(e.target.files || []);
     if (!rawFiles.length) return;
 
-    const imageFiles = rawFiles.filter(
-      (f) => /\.(jpe?g|png|webp|heic)$/i.test(f.name) || f.type.startsWith('image/')
+    const mediaFiles = rawFiles.filter(
+      (f) =>
+        /\.(jpe?g|png|webp|heic|mp4|mov|m4v|webm|avi|mkv)$/i.test(f.name) ||
+        f.type.startsWith('image/') ||
+        f.type.startsWith('video/')
     );
 
-    if (imageFiles.length === 0) {
-      showToast('Selected files are RAW-only (.NEF/.ARW/.CR3). Set your Nikon Z6 III to shoot RAW+JPEG so iPhone can preview and upload JPEGs!', 'error');
+    if (mediaFiles.length === 0) {
+      showToast('Please select JPG/PNG photos or MP4/MOV videos. (RAW-only files like .NEF/.ARW/.CR3 are not supported directly)', 'error');
       return;
     }
 
     const brandLabel = CAMERA_TETHER_GUIDES[selectedBrand]?.brand.split('(')[0].trim() || 'Nikon Z6 III';
     const newStaged = await Promise.all(
-      imageFiles.map(async (file, idx) => {
+      mediaFiles.map(async (file, idx) => {
+        const isVid = file.type.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file.name);
         const alreadyInGallery = existingFilenames.has(file.name);
-        const exifStr = await extractCameraExifFromFile(file);
+        let exifStr = '';
+        if (isVid) {
+          exifStr = `${brandLabel} • Video Clip`;
+        } else {
+          exifStr = await extractCameraExifFromFile(file);
+        }
         return {
           id: `stage-${Date.now()}-${idx}-${file.name}`,
           file,
           name: file.name,
+          isVideo: isVid,
           sizeKB: Math.round(file.size / 1024),
           previewUrl: URL.createObjectURL(file),
-          exifText: exifStr || `${brandLabel} • iPhone Tether`,
+          exifText: exifStr || (isVid ? `${brandLabel} • Video Clip` : `${brandLabel} • Camera Tether`),
           alreadyInGallery,
-          // Default: select new photos only if user picked a few, or let user toggle checkboxes
           selected: !alreadyInGallery
         };
       })
@@ -3255,7 +3314,7 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
 
     setStagedCameraFiles(newStaged);
     showToast(
-      `Loaded ${newStaged.length} photo(s) into Review Grid. Check only the photos you want and tap "Upload Selected"!`,
+      `Loaded ${newStaged.length} item(s) (photos & videos) into Review Grid. Check only the items you want and tap "Upload Selected"!`,
       'info'
     );
     e.target.value = '';
@@ -3308,23 +3367,37 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
       );
 
       try {
-        const maxDim = resizeMode === 'fast2k' ? 2048 : 3840;
-        const { dataUrl } = await prepareTetherImageDataUrl(item.file, maxDim, 0.88);
+        let res;
+        if (item.isVideo) {
+          // Stream video file directly to server binary upload endpoint
+          const uploadUrl = `/api/media/upload?albumId=${encodeURIComponent(album.id)}&name=${encodeURIComponent(item.name)}&category=${encodeURIComponent('Camera Tether')}&camera=${encodeURIComponent(item.exifText)}&mediaType=video&createdTime=${encodeURIComponent(item.file.lastModified ? new Date(item.file.lastModified).toISOString() : new Date().toISOString())}`;
+          res = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': item.file.type || 'video/mp4'
+            },
+            body: item.file
+          });
+        } else {
+          const maxDim = resizeMode === 'fast2k' ? 2048 : 3840;
+          const { dataUrl } = await prepareTetherImageDataUrl(item.file, maxDim, 0.88);
 
-        const res = await fetch('/api/tether/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            albumId: album.id,
-            name: item.name,
-            dataUrl,
-            camera: item.exifText,
-            category: 'Camera Tether',
-            createdTime: item.file.lastModified
-              ? new Date(item.file.lastModified).toISOString()
-              : new Date().toISOString()
-          })
-        });
+          res = await fetch('/api/tether/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              albumId: album.id,
+              name: item.name,
+              dataUrl,
+              mediaType: 'photo',
+              camera: item.exifText,
+              category: 'Camera Tether',
+              createdTime: item.file.lastModified
+                ? new Date(item.file.lastModified).toISOString()
+                : new Date().toISOString()
+            })
+          });
+        }
         const data = await res.json();
         if (data.albums) {
           onAlbumsUpdated(data.albums);
@@ -3379,17 +3452,17 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
         <div className="flex items-start justify-between gap-4 border-b border-zinc-800 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-2xl">
-              🔌
+              🎬
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-white">Mirrorless Camera → iPhone Direct Tether</h2>
+                <h2 className="text-lg font-bold text-white">Upload Photos & Videos / Camera Tether Hub</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  USB-C / PTP / Wi-Fi
+                  Photos & 4K Videos
                 </span>
               </div>
               <p className="text-xs text-zinc-400">
-                Plug your mirrorless camera into your iPhone via USB-C cable (or SD adapter) to import photos straight into the live gallery
+                Upload video clips (.mp4, .mov, .m4v, .webm) and photos (.jpg, .png, .heic) directly from your computer, iPhone, or USB-C camera
               </p>
             </div>
           </div>
@@ -3456,14 +3529,14 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
             </div>
           </div>
 
-          {/* Big Action Buttons for iPhone */}
+          {/* Big Action Buttons for Computer & Phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <label className="py-3.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 transition text-center">
-              <span>📸</span>
-              <span>Load from Camera / Card to Select Photos</span>
+              <span>🎬</span>
+              <span>Select Photos & Videos from Computer / Files</span>
               <input
                 type="file"
-                accept="image/*,.jpg,.jpeg,.png,.heic"
+                accept="image/*,video/*,.jpg,.jpeg,.png,.heic,.webp,.mp4,.mov,.m4v,.webm"
                 multiple
                 onChange={handleCameraFilesSelected}
                 disabled={isTransferring}
@@ -3472,11 +3545,11 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
             </label>
 
             <label className="py-3.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer border border-zinc-700 transition text-center">
-              <span>📲</span>
-              <span>Select Photos from iPhone Library</span>
+              <span>📱</span>
+              <span>Select Photos & Videos from iPhone Library</span>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,video/*,.jpg,.jpeg,.png,.heic,.webp,.mp4,.mov,.m4v,.webm"
                 multiple
                 onChange={handleCameraFilesSelected}
                 disabled={isTransferring}
@@ -3540,11 +3613,21 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                   }`}
                 >
                   <div className="aspect-[4/3] bg-black relative">
-                    <img
-                      src={item.previewUrl}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
+                    {item.isVideo ? (
+                      <video
+                        src={item.previewUrl}
+                        className="w-full h-full object-cover"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        src={item.previewUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
+
                     {/* Selection Checkbox Badge */}
                     <div
                       className={`absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow ${
@@ -3556,6 +3639,14 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                       {item.selected ? '✓' : ''}
                     </div>
 
+                    {/* Video Badge */}
+                    {item.isVideo && (
+                      <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-rose-600/90 text-white font-bold text-[9px] flex items-center gap-1 shadow">
+                        <span>🎬</span>
+                        <span>VIDEO</span>
+                      </span>
+                    )}
+
                     {/* Zoom Preview Button */}
                     <button
                       type="button"
@@ -3564,9 +3655,9 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                         setPreviewStagedItem(item);
                       }}
                       className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/70 hover:bg-black text-white text-[10px]"
-                      title="Inspect full photo before uploading"
+                      title="Inspect full item before uploading"
                     >
-                      🔍 Zoom
+                      🔍 Preview
                     </button>
 
                     {item.alreadyInGallery && (
@@ -3586,7 +3677,7 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
             {/* Confirm Upload Selected Only Button */}
             <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
               <span className="text-xs text-zinc-400">
-                Unchecked photos will stay on your camera/iPhone and will NOT be uploaded.
+                Unchecked items will stay on your computer/phone and will NOT be uploaded.
               </span>
               <button
                 type="button"
@@ -3598,7 +3689,7 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                 <span>
                   {isTransferring
                     ? 'Uploading Selected...'
-                    : `Upload Selected Photos Only (${selectedStagedItems.length})`}
+                    : `Upload Selected Media (${selectedStagedItems.length})`}
                 </span>
               </button>
             </div>
@@ -3611,11 +3702,21 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
             className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4"
             onClick={() => setPreviewStagedItem(null)}
           >
-            <img
-              src={previewStagedItem.previewUrl}
-              alt={previewStagedItem.name}
-              className="max-h-[78vh] max-w-full object-contain rounded-xl border border-zinc-700"
-            />
+            {previewStagedItem.isVideo ? (
+              <video
+                src={previewStagedItem.previewUrl}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[78vh] max-w-full rounded-xl border border-zinc-700 bg-black"
+              />
+            ) : (
+              <img
+                src={previewStagedItem.previewUrl}
+                alt={previewStagedItem.name}
+                className="max-h-[78vh] max-w-full object-contain rounded-xl border border-zinc-700"
+              />
+            )}
             <div
               className="mt-3 flex items-center gap-3 bg-zinc-900 px-4 py-2.5 rounded-xl border border-zinc-700"
               onClick={(e) => e.stopPropagation()}
