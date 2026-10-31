@@ -602,6 +602,7 @@ function App() {
   const [showCoverPickerModal, setShowCoverPickerModal] = useState(false);
   const [showSubfoldersModal, setShowSubfoldersModal] = useState(false);
   const [showDeleteEventModal, setShowDeleteEventModal] = useState(false);
+  const [bottomUploadReminder, setBottomUploadReminder] = useState(null); // { count: number, albumId: string, time: number }
 
   // Live Sync states
   const [isLiveSyncEnabled, setIsLiveSyncEnabled] = useState(true);
@@ -1892,7 +1893,8 @@ function App() {
               </div>
             ) : (
               <>
-                <div className="columns-1 sm:columns-2 md:columns-3 gap-3.5 space-y-3.5">
+                {/* Gallery Grid flowing Left to Right across rows */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
                   {visiblePhotos.map((photo) => {
                     const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
                     const isVid = isVideoItem(photo);
@@ -1900,7 +1902,7 @@ function App() {
                       <div
                         key={photo.id}
                         onClick={() => setLightboxPhoto(photo)}
-                        className="group relative break-inside-avoid overflow-hidden bg-stone-100 cursor-pointer"
+                        className="group relative rounded-sm overflow-hidden bg-stone-100 cursor-pointer aspect-[4/3] flex items-center justify-center"
                       >
                         {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
                           <video
@@ -1908,7 +1910,7 @@ function App() {
                             preload="metadata"
                             muted
                             playsInline
-                            className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
                           />
                         ) : (
                           <img
@@ -1916,7 +1918,7 @@ function App() {
                             alt={photo.name}
                             loading="lazy"
                             style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                            className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
                           />
                         )}
 
@@ -3081,7 +3083,49 @@ function App() {
           onAlbumsUpdated={(updatedAlbums) => setAlbums(updatedAlbums)}
           onClose={() => setShowTetherModal(false)}
           showToast={showToast}
+          onUploadBatchComplete={(count) =>
+            setBottomUploadReminder({ count, albumId: activeAlbum.id, time: Date.now() })
+          }
         />
+      )}
+
+      {/* Persistent Bottom Reminder Bar for Uploaded Files */}
+      {bottomUploadReminder && (
+        <div className="fixed bottom-5 inset-x-0 z-40 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto bg-zinc-900/95 text-white border border-emerald-500/50 shadow-2xl backdrop-blur-md rounded-2xl px-4 py-2.5 flex items-center gap-3 text-xs max-w-md w-full justify-between animate-bounce-once">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-lg">✅</span>
+              <div className="truncate">
+                <span className="font-semibold text-emerald-400">
+                  {bottomUploadReminder.count} media file(s) uploaded!
+                </span>
+                <span className="text-zinc-400 text-[11px] block truncate">
+                  Remained at the bottom of the gallery
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                }}
+                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow-md shadow-emerald-500/20"
+              >
+                <span>⬇</span>
+                <span>View at Bottom</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBottomUploadReminder(null)}
+                className="text-zinc-400 hover:text-white text-xs px-1"
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal 1: Google Drive Folder Connection & Auto-Sync Setup */}
@@ -3223,7 +3267,7 @@ function App() {
 /* ============================================================================
    NEW Sub-Component: Mirrorless Camera -> iPhone Direct Tether & Import Hub
    ============================================================================ */
-function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated, onClose, showToast }) {
+function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated, onClose, showToast, onUploadBatchComplete }) {
   const [selectedBrand, setSelectedBrand] = useState('nikon');
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [resizeMode, setResizeMode] = useState('fast2k'); // 'fast2k' (2048px fast 5G upload) or 'full' (4096px)
@@ -3422,12 +3466,14 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
       }
     }
 
-    // Mark uploaded items in staged grid as alreadyInGallery and deselect them
-    setStagedCameraFiles((prev) =>
-      prev.map((item) =>
+    // Mark uploaded items in staged grid as alreadyInGallery, deselect them, and keep them at the bottom
+    setStagedCameraFiles((prev) => {
+      const updated = prev.map((item) =>
         item.selected ? { ...item, selected: false, alreadyInGallery: true } : item
-      )
-    );
+      );
+      // Keep uploaded files remained at the bottom of the staged review list
+      return [...updated].sort((a, b) => (a.alreadyInGallery ? 1 : 0) - (b.alreadyInGallery ? 1 : 0));
+    });
 
     setStats((prev) => ({
       imported: prev.imported + importedCount,
@@ -3436,7 +3482,10 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
     setIsTransferring(false);
 
     if (importedCount > 0) {
-      showToast(`✅ Uploaded ${importedCount} selected photo(s) to the Live Gallery!`, 'success');
+      if (onUploadBatchComplete) {
+        onUploadBatchComplete(importedCount);
+      }
+      showToast(`✅ Uploaded ${importedCount} file(s) — remained at the bottom of the gallery!`, 'success');
     }
   };
 
@@ -3747,47 +3796,87 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
           </div>
         )}
 
-        {/* Live Transfer Queue & EXIF Telemetry */}
-        {transferQueue.length > 0 && (
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-zinc-200">
-                ⚡ Live Camera Tether Transfer Log ({stats.imported} Imported • {stats.skipped} Duplicates Skipped)
-              </span>
-              <button
-                onClick={() => setTransferQueue([])}
-                className="text-zinc-400 hover:text-white text-[11px]"
-              >
-                Clear Log
-              </button>
-            </div>
-            <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 bg-zinc-950 p-3 rounded-xl border border-zinc-800">
-              {transferQueue.map((item, idx) => (
+        {/* Live Transfer Queue with Left-to-Right Loading Bar */}
+        {transferQueue.length > 0 && (() => {
+          const completedCount = transferQueue.filter(
+            (q) => q.status === 'done' || q.status === 'skipped'
+          ).length;
+          const totalCount = transferQueue.length;
+          const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+          return (
+            <div className="space-y-3 p-4 rounded-2xl bg-zinc-950 border border-emerald-500/40 shadow-xl">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-emerald-400 flex items-center gap-2">
+                  <span className={isTransferring ? "animate-spin inline-block" : ""}>
+                    {isTransferring ? '⚡' : '✅'}
+                  </span>
+                  <span>
+                    {isTransferring
+                      ? `Loading ${completedCount + 1} of ${totalCount}... (${progressPercent}%)`
+                      : `Upload Complete: ${stats.imported} file(s) added (remained at the bottom)`}
+                  </span>
+                </span>
+                <span className="font-mono text-xs font-bold text-emerald-400">{progressPercent}%</span>
+              </div>
+
+              {/* Animated Loading Bar from Left to Right */}
+              <div className="w-full h-3 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800 p-0.5">
                 <div
-                  key={`${item.name}-${idx}`}
-                  className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800/80"
+                  className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 rounded-full transition-all duration-300 ease-out shadow-lg shadow-emerald-500/50"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <span>Loading from left to right</span>
+                <span className="text-zinc-300 font-medium">Uploaded files remain at the bottom ⬇</span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs pt-2 border-t border-zinc-800/80">
+                <span className="text-zinc-400 text-[11px]">
+                  {stats.imported} Imported • {stats.skipped} Skipped
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTransferQueue([])}
+                  className="text-zinc-400 hover:text-white text-[11px]"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span>
-                      {item.status === 'done'
-                        ? '✅'
-                        : item.status === 'skipped'
-                        ? '⏭️'
-                        : item.status === 'uploading'
-                        ? '⏳'
-                        : '❌'}
-                    </span>
-                    <span className="font-mono text-zinc-200 truncate">{item.name}</span>
-                    <span className="text-[10px] text-zinc-500 shrink-0">({item.sizeKB} KB)</span>
+                  Clear Log
+                </button>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1 bg-zinc-900/60 p-2.5 rounded-xl border border-zinc-800/80">
+                {transferQueue.map((item, idx) => (
+                  <div
+                    key={`${item.name}-${idx}`}
+                    className="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg bg-zinc-900/90 border border-zinc-800/80"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span>
+                        {item.status === 'done'
+                          ? '✅'
+                          : item.status === 'skipped'
+                          ? '⏭️'
+                          : item.status === 'uploading'
+                          ? '⏳'
+                          : '❌'}
+                      </span>
+                      <span className="font-mono text-zinc-200 truncate">{item.name}</span>
+                      <span className="text-[10px] text-zinc-500 shrink-0">({item.sizeKB} KB)</span>
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate max-w-[45%] text-right">
+                      {item.status === 'skipped'
+                        ? 'Already in gallery (Skipped)'
+                        : item.status === 'done'
+                        ? 'Uploaded (At bottom)'
+                        : item.exifText}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-zinc-400 truncate max-w-[45%] text-right">
-                    {item.status === 'skipped' ? 'Already in gallery (Skipped)' : item.exifText}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Camera Brand Setup Guide for Direct USB-C -> iPhone Connection */}
         <div className="space-y-3 pt-2 border-t border-zinc-800">

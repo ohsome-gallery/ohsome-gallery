@@ -265,7 +265,7 @@ def ingest_tether_inbox_files(albums):
                 "clientNote": "",
                 "isNewLive": True,
             }
-            target_album["photos"].insert(0, new_photo)
+            target_album["photos"].append(new_photo)
             existing_names.add(safe_name)
             changed = True
 
@@ -862,7 +862,7 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                 "clientNote": "",
                 "isNewLive": True,
             }
-            target_album.setdefault("photos", []).insert(0, new_item)
+            target_album.setdefault("photos", []).append(new_item)
             save_albums(albums)
             return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_item, "albums": albums})
 
@@ -963,7 +963,7 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                 "clientNote": "",
                 "isNewLive": True,
             }
-            target_album["photos"].insert(0, new_photo)
+            target_album["photos"].append(new_photo)
             save_albums(albums)
             return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_photo, "albums": albums})
 
