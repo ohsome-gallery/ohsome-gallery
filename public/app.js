@@ -1641,31 +1641,6 @@ function App() {
                 </p>
               </div>
 
-              {/* Center: Pixieset Minimal Event Part / Subfolder Tabs */}
-              <nav className="hidden md:flex items-center gap-6 h-full overflow-x-auto">
-                {categories.map((cat) => {
-                  const isActive = selectedCategory === cat && !onlyFavorites;
-                  const count = categoryCounts[cat] ?? 0;
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        setOnlyFavorites(false);
-                        setSelectedCategory(cat);
-                      }}
-                      className={`h-full flex items-center gap-1.5 font-editorial text-[11px] uppercase tracking-[0.2em] border-b-2 transition shrink-0 ${
-                        isActive
-                          ? 'border-stone-900 text-stone-900 font-medium'
-                          : 'border-transparent text-stone-400 hover:text-stone-800'
-                      }`}
-                    >
-                      <span>{cat}</span>
-                      <span className="text-[9px] text-stone-400 font-normal">({count})</span>
-                    </button>
-                  );
-                })}
-              </nav>
-
               {/* Right: Clean Minimalist Client Actions + Show View Sort Option (Old->New / New->Old) */}
               <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
                 {/* Media Type Filter (All / Photos / Videos) */}
@@ -1782,37 +1757,56 @@ function App() {
               </div>
             </div>
 
-            {/* Mobile Event Part / Subfolder Bar + Mobile Sort Toggle */}
-            <div className="flex md:hidden items-center justify-between gap-3 px-4 overflow-x-auto border-t border-stone-100 h-11">
-              <div className="flex items-center gap-4 overflow-x-auto h-full">
-                {categories.map((cat) => {
-                  const isActive = selectedCategory === cat && !onlyFavorites;
-                  const count = categoryCounts[cat] ?? 0;
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        setOnlyFavorites(false);
-                        setSelectedCategory(cat);
-                      }}
-                      className={`h-full flex items-center gap-1 font-editorial text-[10px] uppercase tracking-[0.2em] border-b-2 shrink-0 ${
-                        isActive
-                          ? 'border-stone-900 text-stone-900 font-semibold'
-                          : 'border-transparent text-stone-400'
-                      }`}
-                    >
-                      <span>{cat}</span>
-                      <span className="text-[9px] text-stone-400 font-normal">({count})</span>
-                    </button>
-                  );
-                })}
+            {/* Dedicated Separate Line: Folders & Subfolders Bar (All Screen Sizes) */}
+            <div className="border-t border-stone-200/90 bg-stone-50/90 backdrop-blur-md">
+              <div className="max-w-[1440px] mx-auto px-4 sm:px-8 h-12 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto h-full scrollbar-none py-1">
+                  <span className="font-editorial text-[10px] uppercase tracking-[0.2em] text-stone-500 font-bold shrink-0 flex items-center gap-1 mr-1">
+                    <span>📁</span>
+                    <span>Folders:</span>
+                  </span>
+                  {categories.map((cat) => {
+                    const isActive = selectedCategory === cat && !onlyFavorites;
+                    const count = categoryCounts[cat] ?? 0;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          setOnlyFavorites(false);
+                          setSelectedCategory(cat);
+                        }}
+                        className={`h-full flex items-center gap-1.5 font-editorial text-[10px] sm:text-[11px] uppercase tracking-[0.16em] px-3 border-b-2 transition shrink-0 whitespace-nowrap ${
+                          isActive
+                            ? 'border-stone-900 text-stone-900 font-bold bg-white shadow-xs'
+                            : 'border-transparent text-stone-500 hover:text-stone-900 hover:border-stone-300'
+                        }`}
+                      >
+                        <span>{cat === 'All' ? '🗂️ All Photos' : `📂 ${cat}`}</span>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-full ${
+                            isActive ? 'bg-stone-900 text-white font-semibold' : 'bg-stone-200/80 text-stone-600'
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Right side of folder line: Item counter & mobile sort button */}
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <span className="hidden sm:inline font-editorial text-[10px] uppercase tracking-[0.15em] text-stone-400">
+                    {filteredPhotos.length} Items
+                  </span>
+                  <button
+                    onClick={() => setSortOrder((prev) => (prev === 'old-to-new' ? 'new-to-old' : 'old-to-new'))}
+                    className="sm:hidden font-editorial text-[9px] uppercase tracking-[0.15em] px-2.5 py-1 border border-stone-300 bg-white text-stone-800 rounded-sm"
+                  >
+                    {sortOrder === 'old-to-new' ? '🕒 Old → New' : '⚡ New → Old'}
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => setSortOrder((prev) => (prev === 'old-to-new' ? 'new-to-old' : 'old-to-new'))}
-                className="shrink-0 font-editorial text-[9px] uppercase tracking-[0.15em] px-2.5 py-1 border border-stone-300 bg-stone-50 text-stone-800"
-              >
-                {sortOrder === 'old-to-new' ? '🕒 Old → New' : '⚡ New → Old'}
-              </button>
             </div>
           </header>
 
@@ -2381,28 +2375,48 @@ function App() {
               </div>
             )}
 
-            {/* Category / Event Part Subfolder Pills, Search, & Active AI Preset Indicator */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 pb-3">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition shrink-0 flex items-center gap-1.5 ${
-                      selectedCategory === cat
-                        ? 'bg-rose-500 text-white shadow-sm'
-                        : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
-                    }`}
-                  >
-                    <span>{cat === 'All' ? '🗂️ All Photos' : `📂 ${cat}`}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      selectedCategory === cat ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
-                    }`}>
-                      {categoryCounts[cat] ?? 0}
-                    </span>
-                  </button>
-                ))}
+            {/* Dedicated Separate Line: Event Folders & Subfolders */}
+            <div className="p-3 rounded-2xl bg-zinc-950/90 border border-zinc-800/80 shadow-md space-y-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2 overflow-x-auto py-0.5 scrollbar-none max-w-full">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 shrink-0 mr-1">
+                    <span>📁</span>
+                    <span>Folders:</span>
+                  </span>
+                  {categories.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-medium transition shrink-0 flex items-center gap-1.5 ${
+                        selectedCategory === cat
+                          ? 'bg-rose-500 text-white shadow-md shadow-rose-500/25 font-semibold ring-1 ring-rose-400/50'
+                          : 'bg-zinc-900/90 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-800'
+                      }`}
+                    >
+                      <span>{cat === 'All' ? '🗂️ All Photos' : `📂 ${cat}`}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        selectedCategory === cat ? 'bg-white/20 text-white font-bold' : 'bg-zinc-800 text-zinc-400'
+                      }`}>
+                        {categoryCounts[cat] ?? 0}
+                      </span>
+                    </button>
+                  ))}
+                </div>
 
+                <button
+                  onClick={() => setShowSubfoldersModal(true)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold transition border border-dashed border-sky-500/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 shrink-0 flex items-center gap-1.5 ml-auto shadow-xs"
+                  title="Add or Manage Event Parts & Subfolders"
+                >
+                  <span>＋</span>
+                  <span>Add / Manage Subfolder</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Separate Line: Media Type Filter, Sort, Favorites & Search Controls */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/70 pb-3 pt-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-1 bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
                   <button
                     onClick={() => setMediaTypeFilter('all')}
@@ -2452,15 +2466,6 @@ function App() {
                     ⚡ New → Old
                   </button>
                 </div>
-
-                <button
-                  onClick={() => setShowSubfoldersModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition border border-dashed border-sky-500/50 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 shrink-0 flex items-center gap-1"
-                  title="Add or Manage Event Parts & Subfolders"
-                >
-                  <span>＋</span>
-                  <span>Add Event Part / Subfolder</span>
-                </button>
 
                 <button
                   onClick={() => setOnlyFavorites(!onlyFavorites)}
