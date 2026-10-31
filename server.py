@@ -834,9 +834,32 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                     remaining -= len(chunk)
 
             albums = load_albums()
-            target_album = next((a for a in albums if a.get("id") == album_id), albums[0] if albums else None)
+            target_album = next((a for a in albums if a.get("id") == album_id), None)
             if not target_album:
-                return self.send_json({"error": "No active album found"}, status=404)
+                if album_id:
+                    target_album = {
+                        "id": album_id,
+                        "title": "New Event Gallery",
+                        "subtitle": "Live Event Gallery • Synced with Google Drive",
+                        "eventDate": time.strftime("%Y-%m-%d"),
+                        "photographer": "OHSOME",
+                        "photos": [],
+                        "eventParts": [],
+                        "autoSyncSeconds": 10,
+                        "aiEnhancePreset": "radiant",
+                        "defaultSortOrder": "old-to-new",
+                        "watermark": {
+                            "enabled": True,
+                            "text": "© OHSOME",
+                            "position": "bottom-right",
+                            "opacity": 0.75,
+                        },
+                    }
+                    albums.insert(0, target_album)
+                elif albums:
+                    target_album = albums[0]
+                else:
+                    return self.send_json({"error": "No active album found"}, status=404)
 
             # Check duplicate by filename
             for existing in target_album.get("photos", []):
@@ -1004,9 +1027,32 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                 return self.send_json({"error": f"Failed to decode image: {e}"}, status=400)
 
             albums = load_albums()
-            target_album = next((a for a in albums if a["id"] == album_id), albums[0] if albums else None)
+            target_album = next((a for a in albums if a.get("id") == album_id), None)
             if not target_album:
-                return self.send_json({"error": "No active album found"}, status=404)
+                if album_id:
+                    target_album = {
+                        "id": album_id,
+                        "title": "New Event Gallery",
+                        "subtitle": "Live Event Gallery • Synced with Google Drive",
+                        "eventDate": time.strftime("%Y-%m-%d"),
+                        "photographer": "OHSOME",
+                        "photos": [],
+                        "eventParts": [],
+                        "autoSyncSeconds": 10,
+                        "aiEnhancePreset": "radiant",
+                        "defaultSortOrder": "old-to-new",
+                        "watermark": {
+                            "enabled": True,
+                            "text": "© OHSOME",
+                            "position": "bottom-right",
+                            "opacity": 0.75,
+                        },
+                    }
+                    albums.insert(0, target_album)
+                elif albums:
+                    target_album = albums[0]
+                else:
+                    return self.send_json({"error": "No active album found"}, status=404)
 
             # Check duplicate by original camera filename (e.g., DSC0142.JPG)
             for existing in target_album.get("photos", []):

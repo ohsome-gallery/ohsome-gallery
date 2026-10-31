@@ -569,11 +569,44 @@ async function computeVisualSignature(imgUrl) {
 }
 
 function App() {
-  const [albums, setAlbums] = useState([]);
+  const STORAGE_KEY = 'ohsome_albums_backup_v2';
+  const [albums, setAlbums] = useState(() => {
+    try {
+      const cached = localStorage.getItem('ohsome_albums_backup_v2');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
   const [lanIp, setLanIp] = useState('192.168.1.100');
   const [publicUrl, setPublicUrl] = useState('');
-  const [activeAlbumId, setActiveAlbumId] = useState('demo-wedding-live');
+  const [activeAlbumId, setActiveAlbumId] = useState(() => {
+    try {
+      const cached = localStorage.getItem('ohsome_active_album_id');
+      if (cached) return cached;
+    } catch (e) {}
+    return 'demo-wedding-live';
+  });
   const [isLoading, setIsLoading] = useState(true);
+
+  // Keep localStorage backup continuously in sync so albums never get lost
+  useEffect(() => {
+    if (Array.isArray(albums) && albums.length > 0) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(albums));
+      } catch (e) {}
+    }
+  }, [albums]);
+
+  useEffect(() => {
+    if (activeAlbumId) {
+      try {
+        localStorage.setItem('ohsome_active_album_id', activeAlbumId);
+      } catch (e) {}
+    }
+  }, [activeAlbumId]);
 
   // Check URL query params for guest mode or direct iPhone tether mode
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -655,11 +688,23 @@ function App() {
         if (data.lanIp) setLanIp(data.lanIp);
         if (data.publicUrl) setPublicUrl(data.publicUrl);
         if (data.albums && data.albums.length > 0) {
-          setAlbums(data.albums);
+          setAlbums((prev) => {
+            const serverIds = new Set(data.albums.map((a) => a.id));
+            const unsavedLocal = (prev || []).filter((a) => a && a.id && !serverIds.has(a.id));
+            // Automatically push any unsaved local albums to the server so they persist to disk!
+            unsavedLocal.forEach((unsaved) => {
+              fetch('/api/album/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ album: unsaved })
+              }).catch(() => {});
+            });
+            return [...unsavedLocal, ...data.albums];
+          });
           const requestedAlbum = urlParams.get('album');
           if (requestedAlbum && data.albums.some((a) => a.id === requestedAlbum)) {
             setActiveAlbumId(requestedAlbum);
-          } else {
+          } else if (!activeAlbumId || activeAlbumId === 'demo-wedding-live') {
             setActiveAlbumId(data.albums[0].id);
           }
         }
@@ -2659,156 +2704,161 @@ function App() {
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {visiblePhotos.map((photo) => {
-                    const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
-                    const isLandingCover = !activeAlbum.customCoverUrl && coverPhoto?.id === photo.id;
-                    const isVid = isVideoItem(photo);
-                    return (
-                      <div
-                        key={photo.id}
-                        onClick={() => setLightboxPhoto(photo)}
-                        className={`group relative rounded-xl overflow-hidden bg-zinc-900 border transition-all duration-300 cursor-pointer flex flex-col shadow-lg ${
-                          isLandingCover
-                            ? 'border-amber-400 ring-1 ring-amber-400/50'
-                            : 'border-zinc-800/80 hover:border-zinc-600'
-                        }`}
-                      >
-                        <div className="relative aspect-[4/3] overflow-hidden bg-zinc-950 flex items-center justify-center">
-                          {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
-                            <video
-                              src={`${photo.thumbUrl || photo.url}#t=0.5`}
-                              preload="metadata"
-                              muted
-                              playsInline
-                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
-                            />
-                          ) : (
-                            <img
-                              src={photo.thumbUrl || photo.url}
-                              alt={photo.name}
-                              loading="lazy"
-                              style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
-                            />
-                          )}
-
-                          {/* Video Play Overlay */}
-                          {isVid && (
-                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                              <div className="w-12 h-12 rounded-full bg-black/60 border border-white/80 flex items-center justify-center text-white text-lg pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
-                                ▶
-                              </div>
-                            </div>
-                          )}
-
-                          {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
-                            <div
-                              style={{ opacity: activeAlbum.watermark.opacity ?? 0.75 }}
-                              className={`pointer-events-none select-none absolute text-[10px] font-semibold tracking-wider text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] px-2.5 py-1.5 ${
-                                activeAlbum.watermark.position === 'center'
-                                  ? 'inset-0 flex items-center justify-center -rotate-12 text-xs'
-                                  : activeAlbum.watermark.position === 'bottom-center'
-                                  ? 'bottom-1 inset-x-0 text-center'
-                                  : activeAlbum.watermark.position === 'top-left'
-                                  ? 'top-1 left-1'
-                                  : 'bottom-1 right-1'
-                              }`}
-                            >
-                              {activeAlbum.watermark.text}
-                            </div>
-                          )}
-
-                          <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
-                            {isVid && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-sky-500 text-zinc-950 shadow flex items-center gap-1">
-                                <span>🎬</span>
-                                <span>Video</span>
-                              </span>
-                            )}
-                            {isLandingCover && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-400 text-zinc-950 shadow">
-                                ★ Landing Cover
-                              </span>
-                            )}
-                            {photo.isNewLive && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-zinc-950 shadow">
-                                ⚡ Live Tether
-                              </span>
-                            )}
-                            {matchScore && (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500 text-white shadow">
-                                🎯 {matchScore}% Face Match
-                              </span>
-                            )}
-                          </div>
-
-                          <button
-                            onClick={(e) => toggleFavorite(photo.id, e)}
-                            className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center transition shadow-md ${
-                              photo.favorited
-                                ? 'bg-rose-500 text-white scale-105'
-                                : 'bg-zinc-950/60 text-zinc-200 hover:bg-zinc-900 hover:text-rose-400 backdrop-blur-sm'
+                {/* Admin Studio: Left-to-Right Masonry following Original Dimensions */}
+                <div className="flex gap-3.5 sm:gap-4 items-start">
+                  {photoColumns.map((colPhotos, colIdx) => (
+                    <div key={colIdx} className="flex-1 flex flex-col gap-3.5 sm:gap-4 min-w-0">
+                      {colPhotos.map((photo) => {
+                        const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
+                        const isLandingCover = !activeAlbum.customCoverUrl && coverPhoto?.id === photo.id;
+                        const isVid = isVideoItem(photo);
+                        return (
+                          <div
+                            key={photo.id}
+                            onClick={() => setLightboxPhoto(photo)}
+                            className={`group relative rounded-xl overflow-hidden bg-zinc-900 border transition-all duration-300 cursor-pointer flex flex-col shadow-lg ${
+                              isLandingCover
+                                ? 'border-amber-400 ring-1 ring-amber-400/50'
+                                : 'border-zinc-800/80 hover:border-zinc-600'
                             }`}
                           >
-                            {photo.favorited ? '♥' : '♡'}
-                          </button>
+                            <div className="relative overflow-hidden bg-zinc-950">
+                              {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
+                                <video
+                                  src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                                  preload="metadata"
+                                  muted
+                                  playsInline
+                                  className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
+                                />
+                              ) : (
+                                <img
+                                  src={photo.thumbUrl || photo.url}
+                                  alt={photo.name}
+                                  loading="lazy"
+                                  style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
+                                  className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
+                                />
+                              )}
 
-                          <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
-                                showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
-                              }}
-                              className={`px-2 py-1 rounded text-[10px] font-semibold ${
-                                isLandingCover
-                                  ? 'bg-amber-400 text-zinc-950'
-                                  : 'bg-black/75 hover:bg-black text-amber-300'
-                              }`}
-                            >
-                              {isLandingCover ? '★ Current Cover' : '★ Set Landing Cover'}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadPhoto(photo);
-                              }}
-                              className="px-2.5 py-1 rounded-md bg-white/95 hover:bg-white text-zinc-900 text-[11px] font-semibold shadow"
-                            >
-                              ⬇ Download
-                            </button>
-                          </div>
-                        </div>
+                              {/* Video Play Overlay */}
+                              {isVid && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                  <div className="w-12 h-12 rounded-full bg-black/60 border border-white/80 flex items-center justify-center text-white text-lg pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
+                                    ▶
+                                  </div>
+                                </div>
+                              )}
 
-                        <div className="px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-zinc-400 bg-zinc-900/90">
-                          <span className="truncate" title={photo.name}>{photo.name}</span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
-                                showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
-                              }}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium border transition ${
-                                isLandingCover
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                                  : 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 border-zinc-700'
-                              }`}
-                              title="Set as Main Landing Page Photo"
-                            >
-                              {isLandingCover ? '★ Cover' : '☆ Set Cover'}
-                            </button>
-                            {photo.clientNote && (
-                              <span className="text-amber-400" title={`Client Note: ${photo.clientNote}`}>
-                                💬
-                              </span>
-                            )}
+                              {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                                <div
+                                  style={{ opacity: activeAlbum.watermark.opacity ?? 0.75 }}
+                                  className={`pointer-events-none select-none absolute text-[10px] font-semibold tracking-wider text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] px-2.5 py-1.5 ${
+                                    activeAlbum.watermark.position === 'center'
+                                      ? 'inset-0 flex items-center justify-center -rotate-12 text-xs'
+                                      : activeAlbum.watermark.position === 'bottom-center'
+                                      ? 'bottom-1 inset-x-0 text-center'
+                                      : activeAlbum.watermark.position === 'top-left'
+                                      ? 'top-1 left-1'
+                                      : 'bottom-1 right-1'
+                                  }`}
+                                >
+                                  {activeAlbum.watermark.text}
+                                </div>
+                              )}
+
+                              <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+                                {isVid && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-sky-500 text-zinc-950 shadow flex items-center gap-1">
+                                    <span>🎬</span>
+                                    <span>Video</span>
+                                  </span>
+                                )}
+                                {isLandingCover && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-400 text-zinc-950 shadow">
+                                    ★ Landing Cover
+                                  </span>
+                                )}
+                                {photo.isNewLive && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-500 text-zinc-950 shadow">
+                                    ⚡ Live Tether
+                                  </span>
+                                )}
+                                {matchScore && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500 text-white shadow">
+                                    🎯 {matchScore}% Face Match
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                onClick={(e) => toggleFavorite(photo.id, e)}
+                                className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center transition shadow-md ${
+                                  photo.favorited
+                                    ? 'bg-rose-500 text-white scale-105'
+                                    : 'bg-zinc-950/60 text-zinc-200 hover:bg-zinc-900 hover:text-rose-400 backdrop-blur-sm'
+                                }`}
+                              >
+                                {photo.favorited ? '♥' : '♡'}
+                              </button>
+
+                              <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/85 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
+                                    showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
+                                  }}
+                                  className={`px-2 py-1 rounded text-[10px] font-semibold ${
+                                    isLandingCover
+                                      ? 'bg-amber-400 text-zinc-950'
+                                      : 'bg-black/75 hover:bg-black text-amber-300'
+                                  }`}
+                                >
+                                  {isLandingCover ? '★ Current Cover' : '★ Set Landing Cover'}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadPhoto(photo);
+                                  }}
+                                  className="px-2.5 py-1 rounded-md bg-white/95 hover:bg-white text-zinc-900 text-[11px] font-semibold shadow"
+                                >
+                                  ⬇ Download
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-zinc-400 bg-zinc-900/90">
+                              <span className="truncate" title={photo.name}>{photo.name}</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    updateActiveAlbum({ coverPhotoId: photo.id, customCoverUrl: '' });
+                                    showToast(`Set "${photo.name}" as Main Landing Page Cover!`, 'success');
+                                  }}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-medium border transition ${
+                                    isLandingCover
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                                      : 'bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                                  }`}
+                                  title="Set as Main Landing Page Photo"
+                                >
+                                  {isLandingCover ? '★ Cover' : '☆ Set Cover'}
+                                </button>
+                                {photo.clientNote && (
+                                  <span className="text-amber-400" title={`Client Note: ${photo.clientNote}`}>
+                                    💬
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
 
                 {visibleCount < filteredPhotos.length && (
@@ -3206,7 +3256,16 @@ function App() {
           album={activeAlbum}
           lanIp={lanIp}
           publicUrl={publicUrl}
-          onAlbumsUpdated={(updatedAlbums) => setAlbums(updatedAlbums)}
+          onAlbumsUpdated={(updatedAlbums) => {
+            setAlbums((prev) => {
+              const serverMap = new Map((updatedAlbums || []).map((a) => [a.id, a]));
+              const merged = prev.map((localAlb) => serverMap.get(localAlb.id) || localAlb);
+              (updatedAlbums || []).forEach((srv) => {
+                if (!merged.some((m) => m.id === srv.id)) merged.push(srv);
+              });
+              return merged;
+            });
+          }}
           onClose={() => setShowTetherModal(false)}
           showToast={showToast}
           onUploadBatchComplete={(count) =>
