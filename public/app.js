@@ -705,8 +705,11 @@ function App() {
           const requestedAlbum = urlParams.get('album');
           if (requestedAlbum && data.albums.some((a) => a.id === requestedAlbum)) {
             setActiveAlbumId(requestedAlbum);
-          } else if (!activeAlbumId || activeAlbumId === 'demo-wedding-live') {
-            setActiveAlbumId(data.albums[0].id);
+          } else {
+            const allKnown = new Set(data.albums.map((a) => a.id));
+            if (!activeAlbumId || activeAlbumId === 'demo-wedding-live' || !allKnown.has(activeAlbumId)) {
+              setActiveAlbumId(data.albums[0].id);
+            }
           }
         }
       })
@@ -1758,14 +1761,32 @@ function App() {
             className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200/90 transition-all"
           >
             <div className="max-w-[1440px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-4">
-              {/* Left: Event Title & Studio */}
-              <div className="min-w-0">
-                <h2 className="font-serif text-lg sm:text-xl font-medium text-stone-900 truncate">
-                  {activeAlbum.title}
-                </h2>
-                <p className="font-editorial text-[9px] uppercase tracking-[0.22em] text-stone-400 truncate">
-                  {activeAlbum.photographer}
-                </p>
+              {/* Left: Event Title & Studio + Event Switcher */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={activeAlbum.id}
+                      onChange={(e) => {
+                        setActiveAlbumId(e.target.value);
+                        setSelectedCategory('All');
+                        setSelectedPersonCluster(null);
+                        setFaceMatchResults(null);
+                      }}
+                      className="font-serif text-base sm:text-lg font-medium text-stone-900 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded px-2 py-1 max-w-[200px] sm:max-w-[320px] focus:outline-none cursor-pointer truncate"
+                      title="Switch Live Event Gallery"
+                    >
+                      {albums.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          📁 {a.title} ({(a.photos || []).length})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="font-editorial text-[9px] uppercase tracking-[0.22em] text-stone-400 truncate mt-0.5">
+                    {activeAlbum.photographer} • {activeAlbum.eventDate}
+                  </p>
+                </div>
               </div>
 
               {/* Right: Clean Minimalist Client Actions + Show View Sort Option (Old->New / New->Old) */}
@@ -1880,6 +1901,15 @@ function App() {
                   title="Share Gallery"
                 >
                   Share
+                </button>
+
+                {/* Studio / Upload Switcher */}
+                <button
+                  onClick={() => setViewMode('admin')}
+                  className="font-editorial text-[10px] sm:text-[11px] uppercase tracking-[0.16em] px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded transition flex items-center gap-1.5 shadow-xs"
+                  title="Open Photographer Studio / Upload"
+                >
+                  <span>⚙ Studio / Upload</span>
                 </button>
               </div>
             </div>
@@ -2166,28 +2196,27 @@ function App() {
            PHOTOGRAPHER ADMIN & LIVE TETHER STUDIO VIEW (viewMode === 'admin')
            ===================================================================== */
         <>
-          {/* Top Navigation Bar */}
-          <header className="sticky top-0 z-30 bg-zinc-950/85 backdrop-blur-xl border-b border-zinc-800/80">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
-              {/* Brand + Album Selector */}
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-500/20 font-bold text-white text-lg">
+          {/* Top Navigation Bar - Fully Responsive Toolbar (Never clips on mobile/tablet) */}
+          <header className="sticky top-0 z-30 bg-zinc-950/95 backdrop-blur-xl border-b border-zinc-800/80 shadow-lg">
+            <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
+              {/* Brand + Event Selector + +Event + Upload */}
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-rose-500 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-500/20 font-bold text-white text-base sm:text-lg shrink-0">
                     O
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold tracking-tight text-white text-base">OHSOME</span>
-                      <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1.5">
-                        <span className="relative w-2 h-2 rounded-full bg-emerald-400 live-dot inline-block"></span>
+                  <div className="hidden xs:block">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold tracking-tight text-white text-sm sm:text-base">OHSOME</span>
+                      <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                        <span className="relative w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot inline-block"></span>
                         LIVE
                       </span>
                     </div>
-                    <p className="text-[11px] text-zinc-400 hidden sm:block">OHSOME Live Camera Tether & Gallery</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 pl-2 sm:pl-3 border-l border-zinc-800">
+                <div className="flex items-center gap-1.5 sm:gap-2 pl-1 sm:pl-3 border-l border-zinc-800 flex-wrap">
                   <select
                     value={activeAlbum.id}
                     onChange={(e) => {
@@ -2196,7 +2225,8 @@ function App() {
                       setSelectedPersonCluster(null);
                       setFaceMatchResults(null);
                     }}
-                    className="bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 max-w-[140px] sm:max-w-[220px] focus:outline-none focus:border-rose-500"
+                    className="bg-zinc-900 border border-zinc-700 hover:border-zinc-500 text-zinc-100 font-semibold text-xs rounded-lg px-2.5 py-1.5 max-w-[150px] sm:max-w-[240px] focus:outline-none focus:border-rose-500 shadow-xs cursor-pointer"
+                    title="Choose Live Event Gallery"
                   >
                     {albums.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -2204,20 +2234,31 @@ function App() {
                       </option>
                     ))}
                   </select>
+
                   <button
                     onClick={() => setShowNewAlbumModal(true)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-medium transition shrink-0"
-                    title="Create New Event Gallery"
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-semibold transition shrink-0 shadow-md shadow-rose-500/20 flex items-center gap-1"
+                    title="Create New Event Gallery (+ Event)"
                   >
-                    + Event
+                    <span>📁</span>
+                    <span>+ Event</span>
                   </button>
+
+                  <button
+                    onClick={() => setShowTetherModal(true)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md shadow-emerald-500/25 flex items-center gap-1.5 transition shrink-0"
+                    title="Upload Photos & Videos / Tether Hub"
+                  >
+                    <span>➕</span>
+                    <span>Upload Media / Tether</span>
+                  </button>
+
                   <button
                     onClick={() => setShowDeleteEventModal(true)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-medium transition shrink-0 flex items-center gap-1"
-                    title="Delete Event Gallery"
+                    className="text-xs px-2 py-1.5 rounded-lg bg-zinc-900 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-zinc-800 hover:border-rose-500/30 transition shrink-0 flex items-center gap-1"
+                    title="Manage / Delete Event"
                   >
                     <span>🗑️</span>
-                    <span className="hidden xl:inline">Delete Event</span>
                   </button>
                 </div>
               </div>
@@ -2225,19 +2266,11 @@ function App() {
               {/* Right Action Controls */}
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap justify-end">
                 <button
-                  onClick={() => setShowTetherModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition"
-                >
-                  <span>➕</span>
-                  <span>Upload Photos & Videos / Tether</span>
-                </button>
-
-                <button
                   onClick={() => setShowFaceModal(true)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition border ${
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition border ${
                     faceMatchResults
                       ? 'bg-rose-500 text-white border-rose-400 shadow-lg shadow-rose-500/25'
-                      : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-800'
+                      : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800'
                   }`}
                 >
                   <span>🤳</span>
@@ -2246,34 +2279,34 @@ function App() {
 
                 <button
                   onClick={() => setShowProofingModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 flex items-center gap-1.5 transition"
                 >
                   <span className="text-rose-400">♥</span>
-                  <span className="hidden md:inline">Proofing</span>
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 text-[11px] font-semibold">
+                  <span className="hidden sm:inline">Proofing</span>
+                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-semibold">
                     {favoritedPhotos.length}
                   </span>
                 </button>
 
                 <button
                   onClick={() => setShowQRModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 flex items-center gap-1.5 transition"
                 >
                   <span>📱</span>
-                  <span className="hidden md:inline">QR Share</span>
+                  <span className="hidden sm:inline">QR Share</span>
                 </button>
 
                 <button
                   onClick={() => setShowStudioDrawer(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-1.5 transition"
                 >
                   <span>✨</span>
-                  <span className="hidden xl:inline">AI & Watermark</span>
+                  <span className="hidden md:inline">AI & Watermark</span>
                 </button>
 
                 <button
                   onClick={() => setShowDriveModal(true)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1.5 transition"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 transition"
                 >
                   <span>☁️</span>
                   <span className="hidden sm:inline">Drive Sync</span>
@@ -2282,10 +2315,11 @@ function App() {
                 {/* Switch to Clean Pixieset Guest Share View */}
                 <button
                   onClick={() => setViewMode('guest')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-zinc-200 text-zinc-950 transition shadow"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-zinc-200 text-zinc-950 transition shadow flex items-center gap-1.5"
                   title="Preview Clean Pixieset-Style Share Gallery"
                 >
-                  👁️ Share Gallery View
+                  <span>👁️</span>
+                  <span>Guest View</span>
                 </button>
               </div>
             </div>
@@ -3309,6 +3343,15 @@ function App() {
       {showTetherModal && (
         <MirrorlessIphoneTetherModal
           album={activeAlbum}
+          albums={albums}
+          onSelectAlbum={(id) => {
+            setActiveAlbumId(id);
+            setSelectedCategory('All');
+          }}
+          onOpenNewAlbum={() => {
+            setShowTetherModal(false);
+            setShowNewAlbumModal(true);
+          }}
           lanIp={lanIp}
           publicUrl={publicUrl}
           onAlbumsUpdated={(updatedAlbums) => {
@@ -3531,7 +3574,13 @@ function App() {
 /* ============================================================================
    NEW Sub-Component: Mirrorless Camera -> iPhone Direct Tether & Import Hub
    ============================================================================ */
-function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated, onClose, showToast, onUploadBatchComplete }) {
+function MirrorlessIphoneTetherModal({ album, albums = [], onSelectAlbum, onOpenNewAlbum, lanIp, publicUrl, onAlbumsUpdated, onClose, showToast, onUploadBatchComplete }) {
+  const [currentAlbumId, setCurrentAlbumId] = useState(album?.id || (albums[0]?.id || ''));
+  const targetAlbumObj = useMemo(
+    () => (albums || []).find((a) => a.id === currentAlbumId) || album,
+    [albums, currentAlbumId, album]
+  );
+  const [targetCategory, setTargetCategory] = useState('Camera Tether');
   const [selectedBrand, setSelectedBrand] = useState('nikon');
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   const [resizeMode, setResizeMode] = useState('fast2k'); // 'fast2k' (2048px fast 5G upload) or 'full' (4096px)
@@ -3543,12 +3592,22 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
   const [stats, setStats] = useState({ imported: 0, skipped: 0 });
   const tetherQrRef = useRef(null);
 
+  const availableSubfolders = useMemo(() => {
+    const list = new Set(['Camera Tether', 'Highlights', 'Ceremony', 'Reception']);
+    if (targetAlbumObj && Array.isArray(targetAlbumObj.eventParts)) {
+      targetAlbumObj.eventParts.forEach((pt) => {
+        if (pt && pt.name) list.add(pt.name);
+      });
+    }
+    return Array.from(list);
+  }, [targetAlbumObj]);
+
   const baseHost = publicUrl
     ? publicUrl.replace(/\/$/, '')
     : (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && lanIp
     ? `http://${lanIp}:${window.location.port || '8080'}`
     : window.location.origin;
-  const mobileTetherUrl = `${baseHost}/?tether=1&album=${encodeURIComponent(album.id)}`;
+  const mobileTetherUrl = `${baseHost}/?tether=1&album=${encodeURIComponent(currentAlbumId)}`;
 
   useEffect(() => {
     if (tetherQrRef.current && window.QRCode) {
@@ -3678,7 +3737,8 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
         let res;
         if (item.isVideo) {
           // Stream video file directly to server binary upload endpoint
-          const uploadUrl = `/api/media/upload?albumId=${encodeURIComponent(album.id)}&name=${encodeURIComponent(item.name)}&category=${encodeURIComponent('Camera Tether')}&camera=${encodeURIComponent(item.exifText)}&mediaType=video&createdTime=${encodeURIComponent(item.file.lastModified ? new Date(item.file.lastModified).toISOString() : new Date().toISOString())}`;
+          const uploadCat = targetCategory.trim() || 'Camera Tether';
+          const uploadUrl = `/api/media/upload?albumId=${encodeURIComponent(currentAlbumId)}&name=${encodeURIComponent(item.name)}&category=${encodeURIComponent(uploadCat)}&camera=${encodeURIComponent(item.exifText)}&mediaType=video&createdTime=${encodeURIComponent(item.file.lastModified ? new Date(item.file.lastModified).toISOString() : new Date().toISOString())}`;
           res = await fetch(uploadUrl, {
             method: 'POST',
             headers: {
@@ -3689,17 +3749,18 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
         } else {
           const maxDim = resizeMode === 'fast2k' ? 2048 : 3840;
           const { dataUrl } = await prepareTetherImageDataUrl(item.file, maxDim, 0.88);
+          const uploadCat = targetCategory.trim() || 'Camera Tether';
 
           res = await fetch('/api/tether/upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              albumId: album.id,
+              albumId: currentAlbumId,
               name: item.name,
               dataUrl,
               mediaType: 'photo',
               camera: item.exifText,
-              category: 'Camera Tether',
+              category: uploadCat,
               createdTime: item.file.lastModified
                 ? new Date(item.file.lastModified).toISOString()
                 : new Date().toISOString()
@@ -3780,6 +3841,77 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
             </div>
           </div>
           <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        {/* Target Event Album & Subfolder Selector */}
+        <div className="p-3.5 rounded-xl bg-zinc-950 border border-emerald-500/40 shadow-inner flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span>📁</span>
+              <span>Upload Target Event:</span>
+            </span>
+            <select
+              value={currentAlbumId}
+              onChange={(e) => {
+                setCurrentAlbumId(e.target.value);
+                if (onSelectAlbum) onSelectAlbum(e.target.value);
+              }}
+              className="bg-zinc-900 border border-zinc-700 hover:border-emerald-500 text-white text-xs font-semibold rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500 max-w-[220px]"
+            >
+              {(albums && albums.length > 0 ? albums : [album]).map((a) => (
+                <option key={a.id} value={a.id}>
+                  📁 {a.title} ({(a.photos || []).length} items)
+                </option>
+              ))}
+            </select>
+            {onOpenNewAlbum && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenNewAlbum();
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-semibold transition shrink-0 shadow-sm"
+                title="Create New Event Album Now"
+              >
+                + New Event
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-zinc-300 flex items-center gap-1">
+              <span>📂</span>
+              <span>Subfolder:</span>
+            </span>
+            <select
+              value={availableSubfolders.includes(targetCategory) ? targetCategory : '__custom__'}
+              onChange={(e) => {
+                if (e.target.value === '__custom__') {
+                  const customName = prompt('Enter new subfolder / event part name:');
+                  if (customName && customName.trim()) setTargetCategory(customName.trim());
+                } else {
+                  setTargetCategory(e.target.value);
+                }
+              }}
+              className="bg-zinc-900 border border-zinc-700 text-white text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-emerald-500"
+            >
+              {availableSubfolders.map((sf) => (
+                <option key={sf} value={sf}>
+                  {sf}
+                </option>
+              ))}
+              <option value="__custom__">+ Add Custom Folder...</option>
+            </select>
+            <input
+              type="text"
+              value={targetCategory}
+              onChange={(e) => setTargetCategory(e.target.value)}
+              placeholder="Folder Name"
+              className="bg-zinc-900 border border-zinc-700 text-white text-xs rounded-lg px-2 py-1.5 w-32 focus:outline-none focus:border-emerald-500"
+              title="Folder / Category Name"
+            />
+          </div>
         </div>
 
         {/* Primary Action Box: Direct Camera DCIM Import on iPhone */}

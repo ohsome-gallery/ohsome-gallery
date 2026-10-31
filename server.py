@@ -682,19 +682,24 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                     },
                 )
-                with urllib.request.urlopen(req, timeout=20, context=SSL_CTX) as resp:
+                with urllib.request.urlopen(req, timeout=10, context=SSL_CTX) as resp:
                     img_bytes = resp.read()
                     content_type = resp.headers.get("Content-Type", "image/jpeg")
                 self.send_response(200)
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(img_bytes)))
-                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("Cache-Control", "public, max-age=86400")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
                 self.wfile.write(img_bytes)
                 return
-            except Exception as e:
-                return self.send_json({"error": f"Failed to load Drive image: {e}"}, status=502)
+            except Exception:
+                # Direct HTTP 302 redirect fallback ensures images NEVER fail with 502 in browser
+                self.send_response(302)
+                self.send_header("Location", drive_thumb_url)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                return
 
         if path == "/api/photo/download":
             qs = urllib.parse.parse_qs(parsed.query)
@@ -901,6 +906,14 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                 "isNewLive": True,
             }
             target_album.setdefault("photos", []).append(new_item)
+            if category and category != "All":
+                target_album.setdefault("eventParts", [])
+                if not any(isinstance(p, dict) and p.get("name") == category for p in target_album["eventParts"]):
+                    target_album["eventParts"].append({
+                        "id": f"part-{int(time.time()*1000)}",
+                        "name": category,
+                        "driveFolderUrl": ""
+                    })
             save_albums(albums)
             return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_item, "albums": albums})
 
@@ -1152,6 +1165,14 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
                 "isNewLive": True,
             }
             target_album["photos"].append(new_photo)
+            if category and category != "All":
+                target_album.setdefault("eventParts", [])
+                if not any(isinstance(p, dict) and p.get("name") == category for p in target_album["eventParts"]):
+                    target_album["eventParts"].append({
+                        "id": f"part-{int(time.time()*1000)}",
+                        "name": category,
+                        "driveFolderUrl": ""
+                    })
             save_albums(albums)
             return self.send_json({"ok": True, "skippedDuplicate": False, "photo": new_photo, "albums": albums})
 
