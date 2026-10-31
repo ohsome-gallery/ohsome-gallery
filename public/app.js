@@ -1357,6 +1357,35 @@ function App() {
     [filteredPhotos, visibleCount]
   );
 
+  // Responsive column count for original dimension masonry (flowing left-to-right)
+  const [galleryColumns, setGalleryColumns] = useState(() => {
+    if (typeof window === 'undefined') return 3;
+    const w = window.innerWidth;
+    if (w < 640) return 2;
+    if (w < 1024) return 3;
+    return 4;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      if (w < 640) setGalleryColumns(2);
+      else if (w < 1024) setGalleryColumns(3);
+      else setGalleryColumns(4);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Distribute visiblePhotos across columns round-robin so they load left-to-right and keep original dimensions
+  const photoColumns = useMemo(() => {
+    const cols = Array.from({ length: galleryColumns }, () => []);
+    visiblePhotos.forEach((photo, idx) => {
+      cols[idx % galleryColumns].push(photo);
+    });
+    return cols;
+  }, [visiblePhotos, galleryColumns]);
+
   // Reset pagination when album, filters, or sort order change
   useEffect(() => {
     setVisibleCount(120);
@@ -1939,114 +1968,118 @@ function App() {
               </div>
             ) : (
               <>
-                {/* Gallery Grid flowing Left to Right across rows */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
-                  {visiblePhotos.map((photo) => {
-                    const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
-                    const isVid = isVideoItem(photo);
-                    return (
-                      <div
-                        key={photo.id}
-                        onClick={() => setLightboxPhoto(photo)}
-                        className="group relative rounded-sm overflow-hidden bg-stone-100 cursor-pointer aspect-[4/3] flex items-center justify-center"
-                      >
-                        {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
-                          <video
-                            src={`${photo.thumbUrl || photo.url}#t=0.5`}
-                            preload="metadata"
-                            muted
-                            playsInline
-                            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
-                          />
-                        ) : (
-                          <img
-                            src={photo.thumbUrl || photo.url}
-                            alt={photo.name}
-                            loading="lazy"
-                            style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                            className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
-                          />
-                        )}
-
-                        {/* Video Badge & Play Button Icon */}
-                        {isVid && (
-                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/60 backdrop-blur-sm border border-white/80 flex items-center justify-center text-white text-xl pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
-                              ▶
-                            </div>
-                            <span className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-white font-editorial text-[9px] uppercase tracking-[0.16em] flex items-center gap-1 font-semibold">
-                              <span>🎬</span>
-                              <span>Video</span>
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Subtle Watermark */}
-                        {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                {/* Pixieset Original Dimension Gallery: Left-to-Right Masonry */}
+                <div className="flex gap-3.5 sm:gap-4 items-start">
+                  {photoColumns.map((colPhotos, colIdx) => (
+                    <div key={colIdx} className="flex-1 flex flex-col gap-3.5 sm:gap-4 min-w-0">
+                      {colPhotos.map((photo) => {
+                        const matchScore = faceMatchResults ? faceMatchResults[photo.id] : null;
+                        const isVid = isVideoItem(photo);
+                        return (
                           <div
-                            style={{ opacity: (activeAlbum.watermark.opacity ?? 0.75) * 0.75 }}
-                            className={`pointer-events-none select-none absolute text-[9px] font-editorial uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] px-3 py-2 ${
-                              activeAlbum.watermark.position === 'center'
-                                ? 'inset-0 flex items-center justify-center -rotate-12 text-xs'
-                                : activeAlbum.watermark.position === 'bottom-center'
-                                ? 'bottom-1 inset-x-0 text-center'
-                                : activeAlbum.watermark.position === 'top-left'
-                                ? 'top-1 left-1'
-                                : 'bottom-1 right-1'
-                            }`}
+                            key={photo.id}
+                            onClick={() => setLightboxPhoto(photo)}
+                            className="group relative rounded-sm overflow-hidden bg-stone-100 cursor-pointer shadow-sm"
                           >
-                            {activeAlbum.watermark.text}
+                            {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
+                              <video
+                                src={`${photo.thumbUrl || photo.url}#t=0.5`}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                              />
+                            ) : (
+                              <img
+                                src={photo.thumbUrl || photo.url}
+                                alt={photo.name}
+                                loading="lazy"
+                                style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
+                                className="w-full h-auto block transition-transform duration-700 ease-out group-hover:scale-[1.015]"
+                              />
+                            )}
+
+                            {/* Video Badge & Play Button Icon */}
+                            {isVid && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/60 backdrop-blur-sm border border-white/80 flex items-center justify-center text-white text-xl pl-1 shadow-xl group-hover:scale-110 group-hover:bg-rose-500 transition duration-300">
+                                  ▶
+                                </div>
+                                <span className="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-white font-editorial text-[9px] uppercase tracking-[0.16em] flex items-center gap-1 font-semibold">
+                                  <span>🎬</span>
+                                  <span>Video</span>
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Subtle Watermark */}
+                            {!isVid && activeAlbum.watermark?.enabled && activeAlbum.watermark?.text && (
+                              <div
+                                style={{ opacity: (activeAlbum.watermark.opacity ?? 0.75) * 0.75 }}
+                                className={`pointer-events-none select-none absolute text-[9px] font-editorial uppercase tracking-[0.2em] text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)] px-3 py-2 ${
+                                  activeAlbum.watermark.position === 'center'
+                                    ? 'inset-0 flex items-center justify-center -rotate-12 text-xs'
+                                    : activeAlbum.watermark.position === 'bottom-center'
+                                    ? 'bottom-1 inset-x-0 text-center'
+                                    : activeAlbum.watermark.position === 'top-left'
+                                    ? 'top-1 left-1'
+                                    : 'bottom-1 right-1'
+                                }`}
+                              >
+                                {activeAlbum.watermark.text}
+                              </div>
+                            )}
+
+                            {/* Face Match Subtle Tag */}
+                            {matchScore && (
+                              <span className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur-sm text-stone-900 font-editorial text-[9px] uppercase tracking-[0.16em]">
+                                {matchScore}% Match
+                              </span>
+                            )}
+
+                            {/* Persistent Heart if Favorited */}
+                            {photo.favorited && (
+                              <button
+                                onClick={(e) => toggleFavorite(photo.id, e)}
+                                className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-rose-500 drop-shadow-md text-lg"
+                                title="Favorited"
+                              >
+                                ♥
+                              </button>
+                            )}
+
+                            {/* Pixieset Minimal Hover Overlay (Always visible on mobile/iPhone, hover on desktop) */}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-3.5 sm:p-4 pointer-events-none">
+                              <div className="flex items-center gap-4 text-white pointer-events-auto">
+                                <button
+                                  onClick={(e) => toggleFavorite(photo.id, e)}
+                                  className="hover:scale-110 transition text-lg leading-none"
+                                  title="Favorite"
+                                >
+                                  {photo.favorited ? '♥' : '♡'}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadPhoto(photo);
+                                  }}
+                                  className="hover:scale-110 transition text-sm leading-none font-editorial uppercase tracking-[0.15em]"
+                                  title="Download Photo"
+                                >
+                                  ↓ Download
+                                </button>
+                              </div>
+                              {photo.clientNote && (
+                                <span className="text-[10px] font-editorial uppercase tracking-widest text-white/90">
+                                  Note Added
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        )}
-
-                        {/* Face Match Subtle Tag */}
-                        {matchScore && (
-                          <span className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 backdrop-blur-sm text-stone-900 font-editorial text-[9px] uppercase tracking-[0.16em]">
-                            {matchScore}% Match
-                          </span>
-                        )}
-
-                        {/* Persistent Heart if Favorited */}
-                        {photo.favorited && (
-                          <button
-                            onClick={(e) => toggleFavorite(photo.id, e)}
-                            className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center text-white drop-shadow-md text-lg"
-                            title="Favorited"
-                          >
-                            ♥
-                          </button>
-                        )}
-
-                        {/* Pixieset Minimal Hover Overlay (Always visible on mobile/iPhone, hover on desktop) */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 flex items-end justify-between p-3.5 sm:p-4">
-                          <div className="flex items-center gap-4 text-white">
-                            <button
-                              onClick={(e) => toggleFavorite(photo.id, e)}
-                              className="hover:scale-110 transition text-lg leading-none"
-                              title="Favorite"
-                            >
-                              {photo.favorited ? '♥' : '♡'}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadPhoto(photo);
-                              }}
-                              className="hover:scale-110 transition text-sm leading-none font-editorial uppercase tracking-[0.15em]"
-                              title="Download Photo"
-                            >
-                              ↓ Download
-                            </button>
-                          </div>
-                          {photo.clientNote && (
-                            <span className="text-[10px] font-editorial uppercase tracking-widest text-white/90">
-                              Note Added
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
 
                 {visibleCount < filteredPhotos.length && (
@@ -2641,14 +2674,14 @@ function App() {
                             : 'border-zinc-800/80 hover:border-zinc-600'
                         }`}
                       >
-                        <div className="relative aspect-[4/3] overflow-hidden bg-zinc-950">
+                        <div className="relative aspect-[4/3] overflow-hidden bg-zinc-950 flex items-center justify-center">
                           {isVid && (photo.thumbUrl || photo.url).match(/\.(mp4|mov|m4v|webm)$/i) ? (
                             <video
                               src={`${photo.thumbUrl || photo.url}#t=0.5`}
                               preload="metadata"
                               muted
                               playsInline
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
                             />
                           ) : (
                             <img
@@ -2656,7 +2689,7 @@ function App() {
                               alt={photo.name}
                               loading="lazy"
                               style={{ filter: isVid ? 'none' : currentPreset.cssFilter }}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
                             />
                           )}
 
@@ -3759,11 +3792,11 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                       : 'border-zinc-800 bg-zinc-900/50 opacity-65 hover:opacity-100'
                   }`}
                 >
-                  <div className="aspect-[4/3] bg-black relative">
+                  <div className="aspect-[4/3] bg-black relative flex items-center justify-center">
                     {item.isVideo ? (
                       <video
                         src={item.previewUrl}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         muted
                         playsInline
                       />
@@ -3771,7 +3804,7 @@ function MirrorlessIphoneTetherModal({ album, lanIp, publicUrl, onAlbumsUpdated,
                       <img
                         src={item.previewUrl}
                         alt={item.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                       />
                     )}
 
@@ -5637,7 +5670,7 @@ function EventPartsSubfoldersModal({
                     <div
                       key={photo.id}
                       onClick={() => toggleSelectPhoto(photo.id)}
-                      className={`group relative aspect-[4/3] rounded-lg overflow-hidden cursor-pointer border-2 transition ${
+                      className={`group relative aspect-[4/3] rounded-lg overflow-hidden cursor-pointer border-2 transition flex items-center justify-center bg-zinc-950 ${
                         isChecked
                           ? 'border-sky-400 ring-2 ring-sky-400/40 scale-[0.98]'
                           : 'border-zinc-800 hover:border-zinc-600'
@@ -5647,7 +5680,7 @@ function EventPartsSubfoldersModal({
                         src={photo.thumbUrl || photo.url}
                         alt={photo.name}
                         loading="lazy"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                       />
                       <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/75 text-[9px] font-semibold text-sky-300 truncate max-w-[85%]">
                         📂 {photo.category || 'Highlights'}
