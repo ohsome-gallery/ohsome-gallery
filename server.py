@@ -630,9 +630,33 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def do_HEAD(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path in ["/admin", "/backend", "/studio"]:
+            self.send_response(302)
+            self.send_header("Location", "/?mode=admin")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+        if path == "/api/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
+        return super().do_HEAD()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        if path in ["/admin", "/backend", "/studio"]:
+            self.send_response(302)
+            self.send_header("Location", "/?mode=admin")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return
 
         if path == "/api/health":
             return self.send_json({"ok": True, "ts": int(time.time())})
