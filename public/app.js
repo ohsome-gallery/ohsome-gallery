@@ -1735,9 +1735,11 @@ function App() {
 
             {/* Centered Editorial Title Box */}
             <div className="relative z-10 text-center text-white px-6 max-w-3xl mx-auto flex flex-col items-center">
-              <p className="font-editorial text-[11px] sm:text-xs uppercase tracking-[0.32em] text-white/85 mb-4">
-                {activeAlbum.eventDate}
-              </p>
+              {activeAlbum.showEventDate !== false && activeAlbum.eventDate && (
+                <p className="font-editorial text-[11px] sm:text-xs uppercase tracking-[0.32em] text-white/85 mb-4">
+                  {activeAlbum.eventDate}
+                </p>
+              )}
               <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-normal tracking-wide leading-[1.08] mb-8 drop-shadow-sm">
                 {activeAlbum.title}
               </h1>
@@ -1769,7 +1771,7 @@ function App() {
                   {activeAlbum.title}
                 </h2>
                 <p className="font-editorial text-[9px] uppercase tracking-[0.22em] text-stone-400 truncate mt-0.5">
-                  {activeAlbum.photographer} • {activeAlbum.eventDate}
+                  {activeAlbum.photographer}{activeAlbum.showEventDate !== false && activeAlbum.eventDate ? ` • ${activeAlbum.eventDate}` : ''}
                 </p>
               </div>
 
@@ -2352,6 +2354,22 @@ function App() {
                         className="sr-only"
                       />
                     </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextVal = activeAlbum.showEventDate === false ? true : false;
+                        updateActiveAlbum({ showEventDate: nextVal });
+                        showToast(nextVal ? 'Event date is now SHOWN on gallery' : 'Event date is now HIDDEN on gallery', 'info');
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                        activeAlbum.showEventDate === false
+                          ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                          : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                      }`}
+                      title={activeAlbum.showEventDate === false ? "Date is hidden on gallery (Click to Show)" : "Date is visible on gallery (Click to Hide)"}
+                    >
+                      <span>{activeAlbum.showEventDate === false ? '🙈 Date Hidden' : '👁️ Date Shown'}</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setShowEditEventModal(true)}
@@ -4984,6 +5002,7 @@ function EditEventModal({ album, onUpdate, onClose, showToast }) {
   const [title, setTitle] = useState(album.title || '');
   const [photographer, setPhotographer] = useState(album.photographer || 'OHSOME');
   const [eventDate, setEventDate] = useState(album.eventDate || new Date().toISOString().slice(0, 10));
+  const [showEventDate, setShowEventDate] = useState(album.showEventDate !== false);
   const [subtitle, setSubtitle] = useState(album.subtitle || '');
 
   const handleSave = (e) => {
@@ -4997,9 +5016,10 @@ function EditEventModal({ album, onUpdate, onClose, showToast }) {
       title: title.trim(),
       photographer: photographer.trim() || 'OHSOME',
       eventDate: cleanDate,
+      showEventDate: Boolean(showEventDate),
       subtitle: subtitle.trim()
     });
-    showToast(`Updated Event Date to ${cleanDate}!`, 'success');
+    showToast(`Updated Event Details (Date ${showEventDate ? 'Shown' : 'Hidden'})!`, 'success');
     onClose();
   };
 
@@ -5054,6 +5074,20 @@ function EditEventModal({ album, onUpdate, onClose, showToast }) {
             </button>
           </div>
         </div>
+
+        {/* Show / Hide Date on Gallery Toggle */}
+        <label className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-700/80 cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="text-xs font-semibold text-white">Show Date on Gallery</div>
+            <div className="text-[11px] text-zinc-400">Display or hide the event date on the guest page</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={showEventDate}
+            onChange={(e) => setShowEventDate(e.target.checked)}
+            className="w-4 h-4 accent-rose-500 rounded"
+          />
+        </label>
 
         <div>
           <label className="block text-xs text-zinc-300 mb-1">Event Title</label>
@@ -5114,6 +5148,7 @@ function NewAlbumModal({ onCreate, onClose }) {
   const [title, setTitle] = useState('');
   const [photographer, setPhotographer] = useState('OHSOME');
   const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
+  const [showEventDate, setShowEventDate] = useState(true);
   const [driveFolderUrl, setDriveFolderUrl] = useState('');
 
   const handleSubmit = (e) => {
@@ -5124,6 +5159,7 @@ function NewAlbumModal({ onCreate, onClose }) {
       title: title.trim(),
       subtitle: 'Live Event Gallery • Synced with Google Drive & iPhone Tether',
       eventDate: eventDate.trim() || new Date().toISOString().slice(0, 10),
+      showEventDate: Boolean(showEventDate),
       photographer: photographer.trim() || 'Event Photographer',
       driveFolderUrl: driveFolderUrl.trim(),
       driveFolderId: driveFolderUrl.trim(),
@@ -5175,6 +5211,19 @@ function NewAlbumModal({ onCreate, onClose }) {
             className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
           />
         </div>
+
+        <label className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-800 cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="text-xs font-semibold text-white">Show Date on Gallery</div>
+            <div className="text-[11px] text-zinc-400">Display or hide the event date on the guest page</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={showEventDate}
+            onChange={(e) => setShowEventDate(e.target.checked)}
+            className="w-4 h-4 accent-rose-500 rounded"
+          />
+        </label>
 
         <div>
           <label className="block text-xs text-zinc-300 mb-1">Studio / Photographer Name</label>

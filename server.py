@@ -967,6 +967,7 @@ class PiuDriveRequestHandler(SimpleHTTPRequestHandler):
             album.setdefault("eventParts", [])
             album.setdefault("subtitle", "Live Event Gallery • Synced with Google Drive")
             album.setdefault("eventDate", time.strftime("%Y-%m-%d"))
+            album.setdefault("showEventDate", True)
             album.setdefault("photographer", "OHSOME")
             album.setdefault("autoSyncSeconds", 10)
             album.setdefault("aiEnhancePreset", "radiant")
