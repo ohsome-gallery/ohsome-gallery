@@ -2316,7 +2316,7 @@ function App() {
                 {coverImageUrl && (
                   <div
                     onClick={() => setShowCoverPickerModal(true)}
-                    className="hidden sm:block relative w-28 h-20 rounded-xl overflow-hidden border-2 border-amber-400/70 shadow-lg shrink-0 cursor-pointer group"
+                    className="relative w-20 h-16 sm:w-28 sm:h-20 rounded-xl overflow-hidden border-2 border-amber-400/80 shadow-lg shrink-0 cursor-pointer group"
                     title="Click to Change Main Landing Page Cover Photo"
                   >
                     <img
@@ -2325,7 +2325,7 @@ function App() {
                       style={{ objectPosition: coverFocalPoint }}
                       className="w-full h-full object-cover group-hover:scale-105 transition"
                     />
-                    <span className="absolute inset-x-0 bottom-0 bg-black/80 text-amber-300 text-[9px] font-bold uppercase tracking-wider text-center py-0.5">
+                    <span className="absolute inset-x-0 bottom-0 bg-black/80 text-amber-300 text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-center py-0.5">
                       ★ Landing Cover
                     </span>
                   </div>
@@ -2377,6 +2377,15 @@ function App() {
                       title="Edit Event Details (Date, Title, Photographer)"
                     >
                       ✏️ Edit Details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCoverPickerModal(true)}
+                      className="px-2 py-0.5 rounded text-[11px] bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 border border-amber-500/30 transition flex items-center gap-1"
+                      title="Upload or Change Main Landing Page Cover Photo from Device"
+                    >
+                      <span>🖼️</span>
+                      <span>Change Cover Image</span>
                     </button>
                     <span>•</span>
                     <span className="text-emerald-400 flex items-center gap-1">
@@ -3538,6 +3547,7 @@ function App() {
           album={activeAlbum}
           onUpdate={(patch) => updateActiveAlbum(patch)}
           onClose={() => setShowEditEventModal(false)}
+          onOpenCoverPicker={() => setShowCoverPickerModal(true)}
           showToast={showToast}
         />
       )}
@@ -4998,7 +5008,7 @@ function ClientProofingModal({ album, favoritedPhotos, onToggleFavorite, onDownl
 /* ============================================================================
    Sub-Component: Edit Event Date & Details Modal
    ============================================================================ */
-function EditEventModal({ album, onUpdate, onClose, showToast }) {
+function EditEventModal({ album, onUpdate, onClose, onOpenCoverPicker, showToast }) {
   const [title, setTitle] = useState(album.title || '');
   const [photographer, setPhotographer] = useState(album.photographer || 'OHSOME');
   const [eventDate, setEventDate] = useState(album.eventDate || new Date().toISOString().slice(0, 10));
@@ -5119,6 +5129,53 @@ function EditEventModal({ album, onUpdate, onClose, showToast }) {
             placeholder="Live Event Gallery • Synced with Google Drive"
             className="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-rose-500"
           />
+        </div>
+
+        {/* Cover Photo / Landing Banner */}
+        <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {album.customCoverUrl ? (
+              <img
+                src={album.customCoverUrl}
+                alt="Cover"
+                className="w-12 h-12 rounded-lg object-cover border border-rose-500/50 shrink-0"
+              />
+            ) : album.coverPhotoId && (album.photos || []).find((p) => p.id === album.coverPhotoId) ? (
+              <img
+                src={((album.photos || []).find((p) => p.id === album.coverPhotoId) || {}).thumbnailUrl}
+                alt="Cover"
+                className="w-12 h-12 rounded-lg object-cover border border-zinc-700 shrink-0"
+              />
+            ) : (album.photos && album.photos[0]) ? (
+              <img
+                src={album.photos[0].thumbnailUrl}
+                alt="Cover"
+                className="w-12 h-12 rounded-lg object-cover border border-zinc-700 shrink-0"
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-lg shrink-0">
+                🖼️
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-white truncate">Landing Page Cover</div>
+              <div className="text-[11px] text-zinc-400 truncate">
+                {album.customCoverUrl ? '★ Custom upload from device' : (album.coverPhotoId ? 'Selected photo' : 'Default gallery photo')}
+              </div>
+            </div>
+          </div>
+          {onOpenCoverPicker && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenCoverPicker();
+              }}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 shrink-0 transition"
+            >
+              🖼️ Change / Upload
+            </button>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
@@ -5323,27 +5380,73 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-4xl w-full p-5 sm:p-6 space-y-5 shadow-2xl max-h-[92vh] flex flex-col overflow-hidden"
+        className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-4xl w-full p-4 sm:p-6 space-y-4 shadow-2xl max-h-[94vh] flex flex-col overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               <span>🖼️</span>
-              <span>Choose Main Landing Page Photo</span>
+              <span>Customize Main Landing Page Cover</span>
             </h2>
             <p className="text-xs text-zinc-400">
-              Select the hero cover photo & vertical framing for your Pixieset-style Share Gallery landing page
+              Upload a custom cover image from your computer or phone, or pick from gallery photos
             </p>
           </div>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg">
+          <button onClick={onClose} className="text-zinc-400 hover:text-white text-lg p-1">
             ✕
           </button>
+        </div>
+
+        {/* Primary Action Box: Upload Custom Cover Image from Computer or Phone */}
+        <div className="p-3.5 sm:p-4 rounded-xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-zinc-950 border-2 border-dashed border-amber-500/60 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl shrink-0">
+              📸
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-white">Upload from Computer or Phone</span>
+                <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-400 text-zinc-950">
+                  JPG • PNG • HEIC
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400">
+                Upload any vertical or landscape photo from your device's photo library or files
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <label className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-amber-500/25 transition">
+              <span>{isUploadingCustom ? '⏳ Uploading Cover...' : '📁 Choose from Device / Phone'}</span>
+              <input
+                type="file"
+                accept="image/*,.jpg,.jpeg,.png,.webp,.heic"
+                onChange={handleUploadCustomCover}
+                disabled={isUploadingCustom}
+                className="hidden"
+              />
+            </label>
+            {album.customCoverUrl && (
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdate({ customCoverUrl: '' });
+                  showToast('Reset to default gallery photo cover', 'info');
+                }}
+                className="py-2.5 px-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-semibold border border-zinc-700 transition shrink-0"
+                title="Reset to photo from album"
+              >
+                Reset
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Live Pixieset Hero Landing Page Mini-Preview + Framing Controls */}
@@ -5370,7 +5473,7 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
               </span>
             </div>
             <span className="absolute top-2 left-2 px-2 py-0.5 rounded bg-amber-400 text-zinc-950 text-[9px] font-bold uppercase tracking-wider">
-              Live Landing Page Preview
+              {album.customCoverUrl ? '★ Custom Device Upload' : 'Live Landing Page Preview'}
             </span>
           </div>
 
@@ -5421,12 +5524,6 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
                 />
               </div>
             </div>
-
-            <label className="w-full py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-dashed border-amber-500/50 text-amber-300 text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition">
-              <span>📤</span>
-              <span>{isUploadingCustom ? 'Uploading Cover...' : 'Or Upload Custom Cover Image from Device'}</span>
-              <input type="file" accept="image/*" onChange={handleUploadCustomCover} className="hidden" />
-            </label>
           </div>
         </div>
 
