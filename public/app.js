@@ -1713,23 +1713,25 @@ function App() {
             )}
             <div className="absolute inset-0 bg-black/35" />
 
-            {/* Subtle Top-Right Photographer Controls (for previewing & choosing Landing Page Photo) */}
-            <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
-              <button
-                onClick={() => setShowCoverPickerModal(true)}
-                className="px-3.5 py-1.5 bg-black/45 hover:bg-black/75 backdrop-blur-md text-white/90 hover:text-white border border-white/25 text-[10px] font-editorial uppercase tracking-[0.18em] transition"
-                title="Choose Main Landing Page Photo & Framing"
-              >
-                🖼️ Change Landing Photo
-              </button>
-              <button
-                onClick={() => setViewMode('admin')}
-                className="px-3.5 py-1.5 bg-black/35 hover:bg-black/60 backdrop-blur-md text-white/85 hover:text-white border border-white/20 text-[10px] font-editorial uppercase tracking-[0.18em] transition"
-                title="Switch to Photographer Tether & Admin Studio"
-              >
-                ⚙ Photographer Studio
-              </button>
-            </div>
+            {/* Subtle Top-Right Photographer Controls (hidden if opened via guest link) */}
+            {urlParams.get('mode') !== 'guest' && (
+              <div className="absolute top-6 right-6 z-20 flex items-center gap-2.5">
+                <button
+                  onClick={() => setShowCoverPickerModal(true)}
+                  className="px-3.5 py-1.5 bg-black/45 hover:bg-black/75 backdrop-blur-md text-white/90 hover:text-white border border-white/25 text-[10px] font-editorial uppercase tracking-[0.18em] transition"
+                  title="Choose Main Landing Page Photo & Framing"
+                >
+                  🖼️ Change Landing Photo
+                </button>
+                <button
+                  onClick={() => setViewMode('admin')}
+                  className="px-3.5 py-1.5 bg-black/35 hover:bg-black/60 backdrop-blur-md text-white/85 hover:text-white border border-white/20 text-[10px] font-editorial uppercase tracking-[0.18em] transition"
+                  title="Switch to Photographer Tether & Admin Studio"
+                >
+                  ⚙ Photographer Studio
+                </button>
+              </div>
+            )}
 
             {/* Centered Editorial Title Box */}
             <div className="relative z-10 text-center text-white px-6 max-w-3xl mx-auto flex flex-col items-center">
@@ -1761,32 +1763,14 @@ function App() {
             className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200/90 transition-all"
           >
             <div className="max-w-[1440px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between gap-4">
-              {/* Left: Event Title & Studio + Event Switcher */}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={activeAlbum.id}
-                      onChange={(e) => {
-                        setActiveAlbumId(e.target.value);
-                        setSelectedCategory('All');
-                        setSelectedPersonCluster(null);
-                        setFaceMatchResults(null);
-                      }}
-                      className="font-serif text-base sm:text-lg font-medium text-stone-900 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded px-2 py-1 max-w-[200px] sm:max-w-[320px] focus:outline-none cursor-pointer truncate"
-                      title="Switch Live Event Gallery"
-                    >
-                      {albums.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          📁 {a.title} ({(a.photos || []).length})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="font-editorial text-[9px] uppercase tracking-[0.22em] text-stone-400 truncate mt-0.5">
-                    {activeAlbum.photographer} • {activeAlbum.eventDate}
-                  </p>
-                </div>
+              {/* Left: Event Title & Studio (Private to this event only - no dropdown) */}
+              <div className="min-w-0">
+                <h2 className="font-serif text-lg sm:text-xl font-medium text-stone-900 truncate">
+                  {activeAlbum.title}
+                </h2>
+                <p className="font-editorial text-[9px] uppercase tracking-[0.22em] text-stone-400 truncate mt-0.5">
+                  {activeAlbum.photographer} • {activeAlbum.eventDate}
+                </p>
               </div>
 
               {/* Right: Clean Minimalist Client Actions + Show View Sort Option (Old->New / New->Old) */}
@@ -1901,15 +1885,6 @@ function App() {
                   title="Share Gallery"
                 >
                   Share
-                </button>
-
-                {/* Studio / Upload Switcher */}
-                <button
-                  onClick={() => setViewMode('admin')}
-                  className="font-editorial text-[10px] sm:text-[11px] uppercase tracking-[0.16em] px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded transition flex items-center gap-1.5 shadow-xs"
-                  title="Open Photographer Studio / Upload"
-                >
-                  <span>⚙ Studio / Upload</span>
                 </button>
               </div>
             </div>
