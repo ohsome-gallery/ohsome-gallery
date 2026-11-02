@@ -1740,12 +1740,16 @@ function App() {
                   {activeAlbum.eventDate}
                 </p>
               )}
-              <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-normal tracking-wide leading-[1.08] mb-8 drop-shadow-sm">
-                {activeAlbum.title}
-              </h1>
+              {activeAlbum.showCoverTitle !== false && (
+                <h1 className="font-serif text-4xl sm:text-6xl md:text-7xl font-normal tracking-wide leading-[1.08] mb-8 drop-shadow-sm">
+                  {activeAlbum.title}
+                </h1>
+              )}
               <button
                 onClick={scrollToGalleryGrid}
-                className="font-editorial text-[11px] uppercase tracking-[0.28em] px-8 py-3.5 border border-white/85 text-white hover:bg-white hover:text-stone-900 transition duration-300"
+                className={`font-editorial text-[11px] uppercase tracking-[0.28em] px-8 py-3.5 border border-white/85 text-white hover:bg-white hover:text-stone-900 transition duration-300 ${
+                  activeAlbum.showCoverTitle === false ? 'mt-3' : ''
+                }`}
               >
                 View Gallery
               </button>
@@ -2369,6 +2373,22 @@ function App() {
                       title={activeAlbum.showEventDate === false ? "Date is hidden on gallery (Click to Show)" : "Date is visible on gallery (Click to Hide)"}
                     >
                       <span>{activeAlbum.showEventDate === false ? '🙈 Date Hidden' : '👁️ Date Shown'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextVal = activeAlbum.showCoverTitle === false ? true : false;
+                        updateActiveAlbum({ showCoverTitle: nextVal });
+                        showToast(nextVal ? 'Cover title is now SHOWN on landing cover' : 'Cover title is now HIDDEN on landing cover', 'info');
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
+                        activeAlbum.showCoverTitle === false
+                          ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                          : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                      }`}
+                      title={activeAlbum.showCoverTitle === false ? "Cover title is hidden on landing page (Click to Show)" : "Cover title is visible on landing page (Click to Hide)"}
+                    >
+                      <span>{activeAlbum.showCoverTitle === false ? '🙈 Cover Title Hidden' : '🏷️ Cover Title Shown'}</span>
                     </button>
                     <button
                       type="button"
@@ -5013,6 +5033,7 @@ function EditEventModal({ album, onUpdate, onClose, onOpenCoverPicker, showToast
   const [photographer, setPhotographer] = useState(album.photographer || 'OHSOME');
   const [eventDate, setEventDate] = useState(album.eventDate || new Date().toISOString().slice(0, 10));
   const [showEventDate, setShowEventDate] = useState(album.showEventDate !== false);
+  const [showCoverTitle, setShowCoverTitle] = useState(album.showCoverTitle !== false);
   const [subtitle, setSubtitle] = useState(album.subtitle || '');
 
   const handleSave = (e) => {
@@ -5027,9 +5048,10 @@ function EditEventModal({ album, onUpdate, onClose, onOpenCoverPicker, showToast
       photographer: photographer.trim() || 'OHSOME',
       eventDate: cleanDate,
       showEventDate: Boolean(showEventDate),
+      showCoverTitle: Boolean(showCoverTitle),
       subtitle: subtitle.trim()
     });
-    showToast(`Updated Event Details (Date ${showEventDate ? 'Shown' : 'Hidden'})!`, 'success');
+    showToast(`Updated Event Details (Date ${showEventDate ? 'Shown' : 'Hidden'} • Title ${showCoverTitle ? 'Shown' : 'Hidden'})!`, 'success');
     onClose();
   };
 
@@ -5095,6 +5117,20 @@ function EditEventModal({ album, onUpdate, onClose, onOpenCoverPicker, showToast
             type="checkbox"
             checked={showEventDate}
             onChange={(e) => setShowEventDate(e.target.checked)}
+            className="w-4 h-4 accent-rose-500 rounded"
+          />
+        </label>
+
+        {/* Show / Hide Title on Landing Cover Toggle */}
+        <label className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-700/80 cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="text-xs font-semibold text-white">Show Title on Landing Cover</div>
+            <div className="text-[11px] text-zinc-400">Display or hide the event title text on the hero cover photo</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={showCoverTitle}
+            onChange={(e) => setShowCoverTitle(e.target.checked)}
             className="w-4 h-4 accent-rose-500 rounded"
           />
         </label>
@@ -5206,6 +5242,7 @@ function NewAlbumModal({ onCreate, onClose }) {
   const [photographer, setPhotographer] = useState('OHSOME');
   const [eventDate, setEventDate] = useState(new Date().toISOString().slice(0, 10));
   const [showEventDate, setShowEventDate] = useState(true);
+  const [showCoverTitle, setShowCoverTitle] = useState(true);
   const [driveFolderUrl, setDriveFolderUrl] = useState('');
 
   const handleSubmit = (e) => {
@@ -5217,6 +5254,7 @@ function NewAlbumModal({ onCreate, onClose }) {
       subtitle: 'Live Event Gallery • Synced with Google Drive & iPhone Tether',
       eventDate: eventDate.trim() || new Date().toISOString().slice(0, 10),
       showEventDate: Boolean(showEventDate),
+      showCoverTitle: Boolean(showCoverTitle),
       photographer: photographer.trim() || 'Event Photographer',
       driveFolderUrl: driveFolderUrl.trim(),
       driveFolderId: driveFolderUrl.trim(),
@@ -5278,6 +5316,19 @@ function NewAlbumModal({ onCreate, onClose }) {
             type="checkbox"
             checked={showEventDate}
             onChange={(e) => setShowEventDate(e.target.checked)}
+            className="w-4 h-4 accent-rose-500 rounded"
+          />
+        </label>
+
+        <label className="flex items-center justify-between p-3 rounded-xl bg-zinc-950 border border-zinc-800 cursor-pointer">
+          <div className="space-y-0.5">
+            <div className="text-xs font-semibold text-white">Show Title on Landing Cover</div>
+            <div className="text-[11px] text-zinc-400">Display event title text on the hero cover photo</div>
+          </div>
+          <input
+            type="checkbox"
+            checked={showCoverTitle}
+            onChange={(e) => setShowCoverTitle(e.target.checked)}
             className="w-4 h-4 accent-rose-500 rounded"
           />
         </label>
@@ -5462,12 +5513,16 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
             )}
             <div className="absolute inset-0 bg-black/35" />
             <div className="relative z-10 text-center text-white px-4">
-              <p className="font-editorial text-[9px] uppercase tracking-[0.3em] text-white/85 mb-1.5">
-                {album.eventDate}
-              </p>
-              <h3 className="font-serif text-2xl sm:text-3xl font-normal tracking-wide mb-3">
-                {album.title}
-              </h3>
+              {album.showEventDate !== false && album.eventDate && (
+                <p className="font-editorial text-[9px] uppercase tracking-[0.3em] text-white/85 mb-1.5">
+                  {album.eventDate}
+                </p>
+              )}
+              {album.showCoverTitle !== false && (
+                <h3 className="font-serif text-2xl sm:text-3xl font-normal tracking-wide mb-3">
+                  {album.title}
+                </h3>
+              )}
               <span className="font-editorial text-[9px] uppercase tracking-[0.25em] px-4 py-1.5 border border-white/80 text-white">
                 View Gallery
               </span>
@@ -5522,6 +5577,40 @@ function LandingCoverPickerModal({ album, coverPhoto, onUpdate, onClose, showToa
                   onChange={(e) => onUpdate({ eventDate: e.target.value })}
                   className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs text-white"
                 />
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 space-y-1.5">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                Cover Overlays Visibility
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex items-center gap-2 p-1.5 rounded bg-zinc-950 border border-zinc-800 cursor-pointer text-xs text-zinc-200">
+                  <input
+                    type="checkbox"
+                    checked={album.showCoverTitle !== false}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      onUpdate({ showCoverTitle: checked });
+                      showToast(checked ? 'Landing cover title is now shown' : 'Landing cover title is now hidden', 'info');
+                    }}
+                    className="w-4 h-4 accent-amber-500 rounded"
+                  />
+                  <span>Show Title</span>
+                </label>
+                <label className="flex items-center gap-2 p-1.5 rounded bg-zinc-950 border border-zinc-800 cursor-pointer text-xs text-zinc-200">
+                  <input
+                    type="checkbox"
+                    checked={album.showEventDate !== false}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      onUpdate({ showEventDate: checked });
+                      showToast(checked ? 'Event date is now shown' : 'Event date is now hidden', 'info');
+                    }}
+                    className="w-4 h-4 accent-amber-500 rounded"
+                  />
+                  <span>Show Date</span>
+                </label>
               </div>
             </div>
           </div>
